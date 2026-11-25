@@ -3,10 +3,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 /** Fotoğraf tabanlı (Poly Haven, CC0) dokular, gökyüzleri ve modeller. */
-export const A = { pbr: {}, tex: {}, models: {}, ok: false };
+export const A = { pbr: {}, tex: {}, models: {}, anims: {}, ok: false };
 
 const PBR = ['gravel', 'berm', 'grass', 'forest', 'rock', 'plywood', 'wood', 'roof', 'concrete', 'sand'];
-const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub'];
+const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub', 'soldier', 'rifle', 'pistol'];
 
 let aniso = 8;
 const tl = new THREE.TextureLoader();
@@ -47,6 +47,7 @@ export async function loadAssets(renderer, onProgress = () => {}) {
         }
       });
       A.models[k] = g.scene;
+      A.anims[k] = g.animations;
     });
   }
   let done = 0;

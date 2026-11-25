@@ -53,7 +53,8 @@ export function sampleState() {
       I('koni', 3, -4, 0),
       I('ok', -3.5, -7, 40, { boy: 2.2 }),
       I('ok', 3.5, -7.5, -35, { boy: 2.2 }),
-      I('asker', 0.3, -2.4, 0, { poz: 'ayakta' }),
+      I('asker', 0.35, -2.5, 0, { poz: 'ayakta', silah: 'tufek' }),
+      I('asker', -7, -9.3, 0, { poz: 'diz', silah: 'tufek' }),
       I('direk', -14, -44, 0, { h: 3 }),
       I('yazi', 0, -30, 0, { metin: 'HEDEF HATTI', yuk: 2.2 }),
       // ölçüler

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { makeLabel } from './labels.js';
 import { A, pbrMaterial, modelClone } from './assets.js';
+import { buildSoldier } from './soldier.js';
 
 let M = null;
 
@@ -554,9 +555,12 @@ export const CATALOG = {
     noLabel: true,
   },
   asker: {
-    ad: 'Atıcı Figürü', kat: 'Diğer',
-    params: [{ k: 'poz', ad: 'Pozisyon', tip: 'secim', def: 'ayakta', ops: [['ayakta', 'Ayakta'], ['diz', 'Diz çökmüş'], ['yuzustu', 'Yüzüstü']] }],
-    build: (p) => soldier(p.poz),
+    ad: 'Atıcı (Asker)', kat: 'Diğer',
+    params: [
+      { k: 'poz', ad: 'Pozisyon', tip: 'secim', def: 'ayakta', ops: [['ayakta', 'Ayakta'], ['diz', 'Diz çökmüş'], ['yuzustu', 'Yüzüstü']] },
+      { k: 'silah', ad: 'Silah', tip: 'secim', def: 'tufek', ops: [['tufek', 'Tüfek'], ['tabanca', 'Tabanca']] },
+    ],
+    build: (p) => buildSoldier(p.poz, p.silah) || soldier(p.poz),
     top: (p) => (p.poz === 'ayakta' ? 1.85 : p.poz === 'diz' ? 1.45 : 0.5),
   },
 };
