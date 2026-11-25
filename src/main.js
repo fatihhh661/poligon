@@ -826,5 +826,6 @@ function wireUI() {
 boot().catch((err) => {
   console.error(err);
   const t = $('#spTxt');
-  if (t) t.textContent = 'Başlatma hatası: ' + (err.message || err);
+  const webgl = /webgl|context/i.test(String(err.message || err));
+  if (t) t.textContent = webgl ? 'Ekran kartı (3D) başlatılamadı. Ekran kartı sürücüsünü güncelleyin.' : 'Başlatma hatası: ' + (err.message || err);
 });

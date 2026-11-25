@@ -1,0 +1,7 @@
+{
+  "appId": "tr.poligonpro.app",
+  "productName": "Poligon Pro",
+  "directories": { "output": "dist/builder" },
+  "win": { "target": [{ "target": "portable", "arch": ["x64"] }], "icon": "build/icon.ico", "signAndEditExecutable": false },
+  "portable": { "artifactName": "PoligonPro.exe", "splashImage": "build/splash.bmp", "unpackDirName": "PoligonPro" }
+}

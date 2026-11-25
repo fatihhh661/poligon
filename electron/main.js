@@ -5,13 +5,27 @@ const fs = require('fs');
 let win = null;
 let dirty = false;
 
+// --- hata günlüğü: %APPDATA%/Poligon Pro/poligon-hata.log ---
+function logErr(msg) {
+  try {
+    const f = path.join(app.getPath('userData'), 'poligon-hata.log');
+    fs.appendFileSync(f, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch (e) { /* */ }
+}
+process.on('uncaughtException', (e) => {
+  logErr('uncaughtException: ' + (e && e.stack || e));
+  try { dialog.showErrorBox('Poligon Pro - Hata', String(e && e.message || e)); } catch (x) { /* */ }
+});
+app.on('child-process-gone', (_e, d) => logErr(`child-process-gone: ${d.type} ${d.reason} ${d.exitCode}`));
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1600,
     height: 940,
     minWidth: 1180,
     minHeight: 720,
-    show: false,
+    show: true,
     backgroundColor: '#050605',
     title: 'Poligon Pro',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
@@ -28,10 +42,18 @@ function createWindow() {
   });
   Menu.setApplicationMenu(null);
   win.loadFile(path.join(__dirname, '..', 'app', 'index.html'));
-  win.once('ready-to-show', () => {
-    win.maximize();
-    win.show();
+  win.maximize();
+  win.webContents.on('render-process-gone', (_e, d) => {
+    logErr(`render-process-gone: ${d.reason} ${d.exitCode}`);
+    const r = dialog.showMessageBoxSync(win, {
+      type: 'error', buttons: ['Yeniden Başlat', 'Kapat'], title: 'Poligon Pro',
+      message: 'Program beklenmedik şekilde durdu.',
+      detail: 'Ekran kartı sürücüsü ile ilgili bir sorun olabilir. Yeniden başlatmayı deneyin.',
+    });
+    if (r === 0) win.reload(); else app.quit();
   });
+  win.webContents.on('did-fail-load', (_e, code, desc) => logErr(`did-fail-load: ${code} ${desc}`));
+  win.webContents.on('console-message', (_e, level, message) => { if (level >= 3) logErr('renderer: ' + message); });
   // dış bağlantıları tarayıcıda aç, uygulama içinde gezinmeyi engelle
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -102,9 +124,8 @@ ipcMain.handle('save-png', async (_e, { defName, dataUrl }) => {
 
 ipcMain.on('set-dirty', (_e, v) => { dirty = !!v; });
 
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-  app.whenReady().then(createWindow);
-  app.on('window-all-closed', () => app.quit());
-}
+app.whenReady().then(createWindow).catch((e) => {
+  logErr('whenReady: ' + (e && e.stack || e));
+  dialog.showErrorBox('Poligon Pro - Başlatma hatası', String(e && e.message || e));
+});
+app.on('window-all-closed', () => app.quit());
