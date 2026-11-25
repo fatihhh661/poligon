@@ -1,0 +1,23 @@
+{
+  "name": "poligon-pro",
+  "productName": "Poligon Pro",
+  "version": "1.0.0",
+  "description": "Poligon Parkur Tasarım ve Sunum Programı",
+  "main": "electron/main.js",
+  "author": "Poligon Pro",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "paket": "npm run build && node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "18.3.6",
+    "@fontsource/inter": "5.1.0",
+    "@fontsource/rajdhani": "5.1.0",
+    "electron": "33.4.11",
+    "esbuild": "0.24.0",
+    "three": "0.170.0"
+  }
+}

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; img-src 'self' data: blob:; media-src 'self' data: blob:">
+<title>Poligon Pro</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="stage"></div>
+
+<!-- ============ EDİTÖR ============ -->
+<div id="app" class="is-hidden">
+  <header id="titlebar">
+    <div class="tb-brand"><span class="tb-logo" data-emblem="mini"></span><b>POLİGON</b><span>PRO</span></div>
+    <div class="tb-sep"></div>
+    <div class="tb-doc"><span id="docName">Yeni Parkur</span><i id="docDirty" title="Kaydedilmemiş değişiklik var">●</i></div>
+  </header>
+
+  <nav id="toolbar">
+    <div class="tg">
+      <button class="tbtn" data-cmd="menu" data-tip="Ana menü"><i data-icon="home"></i><span>Menü</span></button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" data-cmd="yeni" data-tip="Yeni parkur (Ctrl+N)"><i data-icon="filePlus"></i><span>Yeni</span></button>
+      <button class="tbtn" data-cmd="ac" data-tip="Parkur aç (Ctrl+O)"><i data-icon="folder"></i><span>Aç</span></button>
+      <button class="tbtn" data-cmd="kaydet" data-tip="Kaydet (Ctrl+S)"><i data-icon="save"></i><span>Kaydet</span></button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" data-cmd="geri" data-tip="Geri al (Ctrl+Z)"><i data-icon="undo"></i><span>Geri</span></button>
+      <button class="tbtn" data-cmd="ileri" data-tip="İleri al (Ctrl+Y)"><i data-icon="redo"></i><span>İleri</span></button>
+    </div>
+    <div class="tg">
+      <button class="tbtn mode" data-cmd="sec" data-tip="Seç ve taşı (V)"><i data-icon="cursor"></i><span>Seç</span></button>
+      <button class="tbtn mode" data-cmd="olc" data-tip="Mesafe ölç: iki noktaya tıklayın (M)"><i data-icon="ruler"></i><span>Ölç</span></button>
+    </div>
+    <div class="tg">
+      <button class="tbtn tog" data-cmd="oto" data-tip="Atış noktası–hedef mesafelerini otomatik göster"><i data-icon="arrows"></i><span>Mesafeler</span></button>
+      <button class="tbtn tog" data-cmd="etiket" data-tip="Hedef ve nokta numaralarını göster"><i data-icon="tag"></i><span>Numaralar</span></button>
+      <div class="tsel" data-tip="Izgaraya yapışma adımı (Alt basılı: serbest)">
+        <i data-icon="grid"></i>
+        <select id="snapSel">
+          <option value="0">Serbest</option>
+          <option value="0.05">5 cm</option>
+          <option value="0.1">10 cm</option>
+          <option value="0.25">25 cm</option>
+          <option value="0.5">50 cm</option>
+          <option value="1">1 m</option>
+        </select>
+      </div>
+    </div>
+    <div class="tg grow"></div>
+    <div class="tg">
+      <button class="tbtn" data-cmd="png" data-tip="Görünümü yüksek çözünürlüklü PNG olarak kaydet"><i data-icon="image"></i><span>PNG</span></button>
+      <button class="tbtn" data-cmd="ayarlar" data-tip="Ayarlar"><i data-icon="sliders"></i><span>Ayarlar</span></button>
+    </div>
+  </nav>
+
+  <aside id="lib">
+    <div class="lib-head">
+      <div class="ph-title">ELEMAN KÜTÜPHANESİ</div>
+      <div class="search"><i data-icon="search"></i><input id="libSearch" placeholder="Eleman ara..." autocomplete="off"></div>
+    </div>
+    <div id="libList" class="scroll"></div>
+    <div class="lib-tip"><i data-icon="info"></i><span>Sahneye <b>sürükleyip bırakın</b> ya da tıklayıp sahnede yerini seçin. <b>Shift</b> ile art arda yerleştirin.</span></div>
+  </aside>
+
+  <main id="viewport">
+    <div id="hud-mode" class="hud-chip is-hidden"></div>
+    <div id="compass" data-tip="Atış yönü">
+      <div class="cmp-ring"><div class="cmp-arrow"></div></div>
+      <span>ATIŞ YÖNÜ</span>
+    </div>
+    <div class="view-dock" id="viewDock">
+      <button data-view="kus" data-tip="Tam tepeden plan görünümü (1)"><i data-icon="top"></i><span>Kuşbakışı</span></button>
+      <button data-view="genel" data-tip="Perspektif genel görünüm (2)"><i data-icon="cube"></i><span>Perspektif</span></button>
+      <button data-view="atici" data-tip="Seçili / ilk atış noktasından atıcı gözü (3)"><i data-icon="eye"></i><span>Atıcı Gözü</span></button>
+      <button data-view="hedef" data-tip="Hedeflerin arkasından atıcıya bakış (4)"><i data-icon="target"></i><span>Hedef Arkası</span></button>
+      <button data-view="yan" data-tip="Yandan görünüm (5)"><i data-icon="side"></i><span>Yan</span></button>
+      <button data-view="drone" data-tip="Otomatik dönen sinematik drone turu (6)"><i data-icon="orbit"></i><span>Drone Turu</span></button>
+    </div>
+    <div id="minimap">
+      <div class="mm-head"><span>HARİTA</span><small id="mmScale"></small></div>
+      <canvas id="mmCanvas" width="200" height="250"></canvas>
+    </div>
+  </main>
+
+  <aside id="side">
+    <div class="tabs" id="sideTabs">
+      <button data-tab="ozellik" class="on">Özellikler</button>
+      <button data-tab="parkur">Parkur</button>
+      <button data-tab="mesafe">Mesafeler</button>
+      <button data-tab="emniyet">Emniyet <b id="warnBadge" class="badge is-hidden">0</b></button>
+    </div>
+    <div class="tabpane scroll on" id="tab-ozellik"></div>
+    <div class="tabpane scroll" id="tab-parkur"></div>
+    <div class="tabpane scroll" id="tab-mesafe"></div>
+    <div class="tabpane scroll" id="tab-emniyet"></div>
+  </aside>
+
+  <footer id="status">
+    <span id="stCoord">X: —  ·  Atış hattından: —</span>
+    <span id="stHint" class="grow"></span>
+    <span id="stSummary"></span>
+    <span id="stQuality"></span>
+    <span id="stFps"></span>
+  </footer>
+</div>
+
+<!-- ============ ANA MENÜ ============ -->
+<div id="menu" class="is-hidden">
+  <div class="mn-shade"></div>
+  <div class="mn-left">
+    <div class="mn-brand">
+      <div class="mn-emblem" data-emblem="full"></div>
+      <div>
+        <h1><span>POLİGON</span> <b>PRO</b></h1>
+        <p>PARKUR TASARIM VE SUNUM SİSTEMİ</p>
+        <p class="mn-unit" id="mnUnit"></p>
+      </div>
+    </div>
+    <div class="mn-cards" id="mnCards">
+      <button class="mn-card primary" data-act="yeni"><i data-icon="filePlus"></i><div><b>Yeni Parkur</b><small>Boş bir poligonda tasarıma başlayın</small></div><em>›</em></button>
+      <button class="mn-card is-hidden" data-act="devam" id="mnDevam"><i data-icon="play"></i><div><b>Devam Et</b><small id="mnDevamTxt">Son çalışmanıza kaldığınız yerden devam edin</small></div><em>›</em></button>
+      <button class="mn-card" data-act="ac"><i data-icon="folder"></i><div><b>Parkur Aç</b><small>Kayıtlı bir .parkur dosyasını açın</small></div><em>›</em></button>
+      <button class="mn-card" data-act="ornek"><i data-icon="target"></i><div><b>Örnek Parkur</b><small>Hazır örnekle programı keşfedin</small></div><em>›</em></button>
+      <div class="mn-row">
+        <button class="mn-card small" data-act="ayarlar"><i data-icon="sliders"></i><div><b>Ayarlar</b></div></button>
+        <button class="mn-card small" data-act="hakkinda"><i data-icon="info"></i><div><b>Hakkında</b></div></button>
+      </div>
+    </div>
+  </div>
+  <div class="mn-right">
+    <div class="ph-title">SON PARKURLAR</div>
+    <div id="recentList"></div>
+  </div>
+  <div class="mn-foot"><span id="mnClock"></span><span>Sürüm 1.0 · Tamamen çevrimdışı çalışır</span></div>
+</div>
+
+<!-- ============ AÇILIŞ ============ -->
+<div id="splash">
+  <div class="sp-bg"></div>
+  <div class="sp-grid"></div>
+  <div class="sp-vignette"></div>
+  <div class="sp-center">
+    <div class="sp-emblem" data-emblem="full"></div>
+    <h1 class="sp-title"><span>POLİGON</span><b>PRO</b></h1>
+    <div class="sp-sub">PARKUR TASARIM VE SUNUM SİSTEMİ</div>
+    <div class="sp-unit" id="spUnit"></div>
+    <div class="sp-load">
+      <div class="sp-bar"><i id="spBar"></i></div>
+      <div class="sp-txt"><span id="spTxt">Başlatılıyor</span><span id="spPct">0%</span></div>
+    </div>
+  </div>
+  <div class="sp-corner tl">SİSTEM HAZIRLANIYOR</div>
+  <div class="sp-corner tr" id="spTime"></div>
+  <div class="sp-corner bl">SÜRÜM 1.0</div>
+  <div class="sp-corner br">GEÇMEK İÇİN TIKLAYIN</div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+<div id="tooltip"></div>
+<input type="file" id="fileIn" accept=".parkur,.json" hidden>
+<input type="file" id="logoIn" accept="image/*" hidden>
+
+<script src="bundle.js"></script>
+</body>
+</html>
