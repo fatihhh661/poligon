@@ -5,13 +5,27 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, vig: { value: 0.28 }, sat: { value: 1.08 }, con: { value: 1.06 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float vig; uniform float sat; uniform float con; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.2126,0.7152,0.0722));
+      c.rgb = mix(vec3(l), c.rgb, sat);
+      c.rgb = (c.rgb - 0.5) * con + 0.5;
+      vec2 d = vUv - 0.5; float v = 1.0 - dot(d, d) * vig * 2.2;
+      c.rgb *= clamp(v, 0.0, 1.0);
+      gl_FragColor = vec4(clamp(c.rgb,0.0,1.0), c.a); }`,
+};
 import { updateLabelScales } from './labels.js';
 import { easeInOut } from './util.js';
 
 export const QUALITY = {
   dusuk: { ad: 'Düşük', pr: 1, shadow: 1024, samples: 0, ao: false },
   orta: { ad: 'Orta', pr: 1, shadow: 2048, samples: 4, ao: false },
-  yuksek: { ad: 'Yüksek', pr: 1.5, shadow: 2048, samples: 4, ao: false },
+  yuksek: { ad: 'Yüksek', pr: 1.25, shadow: 4096, samples: 4, ao: true },
   ultra: { ad: 'Ultra', pr: 2, shadow: 4096, samples: 4, ao: true },
 };
 
@@ -72,8 +86,8 @@ export class Engine {
     if (q.ao) {
       this.aoPass = new GTAOPass(this.scene, this.camera, size.x, size.y);
       this.aoPass.output = GTAOPass.OUTPUT.Default;
-      this.aoPass.blendIntensity = 0.85;
-      this.aoPass.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1 });
+      this.aoPass.blendIntensity = 0.9;
+      this.aoPass.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.5, scale: 1 });
       this.composer.addPass(this.aoPass);
     }
     const op = (this.outline = new OutlinePass(new THREE.Vector2(size.x, size.y), this.scene, this.camera));
@@ -85,6 +99,7 @@ export class Engine {
     op.selectedObjects = this._selected || [];
     this.composer.addPass(op);
     this.composer.addPass(new OutputPass());
+    this.composer.addPass(new ShaderPass(GradeShader));
     this.resize();
   }
 

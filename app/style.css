@@ -321,7 +321,7 @@ kbd { display: inline-block; padding: 1px 6px; border-radius: 5px; border: 1px s
 /* ================= ANA MENÜ ================= */
 #menu { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-columns: minmax(560px, 640px) 1fr minmax(300px, 380px); grid-template-rows: 1fr auto; animation: menuIn 0.9s ease both; }
 @keyframes menuIn { from { opacity: 0; } }
-.mn-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(6, 8, 10, 0.92) 0%, rgba(6, 8, 10, 0.7) 32%, rgba(6, 8, 10, 0.05) 60%, rgba(6, 8, 10, 0.55) 100%), linear-gradient(0deg, rgba(0, 0, 0, 0.6), transparent 25%); }
+.mn-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(6, 8, 10, 0.88) 0%, rgba(6, 8, 10, 0.6) 30%, rgba(6, 8, 10, 0) 55%, rgba(6, 8, 10, 0) 78%, rgba(6, 8, 10, 0.45) 100%), linear-gradient(0deg, rgba(0, 0, 0, 0.45), transparent 22%); }
 .mn-left { position: relative; grid-column: 1; padding: 64px 48px 24px 60px; display: flex; flex-direction: column; justify-content: center; gap: 40px; }
 .mn-brand { display: flex; align-items: center; gap: 20px; animation: slideIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .mn-emblem { width: 92px; height: 92px; filter: drop-shadow(0 0 18px rgba(214, 166, 70, 0.3)); flex: none; }

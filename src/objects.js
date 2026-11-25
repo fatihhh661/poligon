@@ -1,27 +1,29 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { makeLabel } from './labels.js';
+import { A, pbrMaterial, modelClone } from './assets.js';
 
 let M = null;
 
 export function initMaterials(tex) {
   const S = (o) => new THREE.MeshStandardMaterial(o);
   const paint = (color) => S({ color, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  const real = A.ok;
   M = {
-    osb: S({ map: tex.osb, roughness: 0.9 }),
-    wood: S({ map: tex.wood, roughness: 0.85 }),
-    woodLight: S({ map: tex.woodLight, roughness: 0.85 }),
+    osb: real ? pbrMaterial('plywood', { repeat: 0.8, normalScale: 0.8 }) : S({ map: tex.osb, roughness: 0.9 }),
+    wood: real ? pbrMaterial('wood', { color: 0xb59a7c }) : S({ map: tex.wood, roughness: 0.85 }),
+    woodLight: real ? pbrMaterial('wood', { color: 0xe8d6bc }) : S({ map: tex.woodLight, roughness: 0.85 }),
     cardboard: S({ color: 0x9c7c55, roughness: 1 }),
     paper: S({ map: tex.target, roughness: 0.92, side: THREE.FrontSide }),
     paperDost: S({ map: tex.targetDost, roughness: 0.92 }),
     steel: S({ color: 0xe0612a, roughness: 0.5, metalness: 0.35 }),
     steelDark: S({ color: 0x33383e, roughness: 0.45, metalness: 0.75 }),
-    red: S({ color: 0xc62828, roughness: 0.6 }),
+    red: real ? pbrMaterial('wood', { color: 0xd23a2a }) : S({ color: 0xc62828, roughness: 0.6 }),
     white: paint(0xf4f3ee),
     yellow: paint(0xf2c230),
     redPaint: paint(0xd32f2f),
-    sandA: S({ color: 0xb9a77b, roughness: 1 }),
-    sandB: S({ color: 0xa8956a, roughness: 1 }),
+    sandA: real ? pbrMaterial('sand', { color: 0xd8c9a0, repeat: 0.6 }) : S({ color: 0xb9a77b, roughness: 1 }),
+    sandB: real ? pbrMaterial('sand', { color: 0xc4b289, repeat: 0.6 }) : S({ color: 0xa8956a, roughness: 1 }),
     barrel: S({ color: 0x1f4e8c, roughness: 0.45, metalness: 0.45 }),
     barrelDark: S({ color: 0x163a69, roughness: 0.45, metalness: 0.45 }),
     rubber: S({ color: 0x1c1c1c, roughness: 0.9 }),
@@ -340,6 +342,8 @@ export const CATALOG = {
     ad: 'Varil', kat: 'Tahtalar ve Engeller',
     params: [],
     build: () => {
+      const mdl = modelClone('barrel', { height: 0.88 });
+      if (mdl) { const g = new THREE.Group(); g.add(mdl); return g; }
       const g = new THREE.Group();
       g.add(mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.88, 28), M.barrel, 0, 0.44, 0));
       for (const y of [0.29, 0.59]) g.add(mesh(new THREE.TorusGeometry(0.292, 0.012, 6, 32).rotateX(Math.PI / 2), M.barrelDark, 0, y, 0));
@@ -366,6 +370,16 @@ export const CATALOG = {
     ad: 'Lastik', kat: 'Tahtalar ve Engeller',
     params: [{ k: 'adet', ad: 'İstif adedi', tip: 'sayi', def: 2, min: 1, max: 6, step: 1 }],
     build: (p) => {
+      if (A.models.tyre) {
+        const g = new THREE.Group();
+        for (let i = 0; i < p.adet; i++) {
+          const t = tyreFlat();
+          t.position.set((i % 2) * 0.03, i * (t.userData.h - 0.01), 0);
+          t.rotation.y = i * 0.7;
+          g.add(t);
+        }
+        return g;
+      }
       const g = new THREE.Group();
       const geo = new THREE.TorusGeometry(0.27, 0.11, 12, 28).rotateX(Math.PI / 2);
       for (let i = 0; i < p.adet; i++) {
@@ -381,6 +395,14 @@ export const CATALOG = {
     ad: 'Masa', kat: 'Tahtalar ve Engeller',
     params: [P.w(1.2, 0.6, 3)],
     build: (p) => {
+      const mdl = modelClone('table');
+      if (mdl) {
+        const b = new THREE.Box3().setFromObject(mdl), s = b.getSize(new THREE.Vector3());
+        const k = p.w / Math.max(s.x, s.z);
+        mdl.scale.set(k, 0.75 / s.y, k);
+        if (s.z > s.x) mdl.rotation.y = Math.PI / 2;
+        const g = new THREE.Group(); g.add(mdl); return g;
+      }
       const g = new THREE.Group();
       g.add(woodBox(p.w, 0.05, 0.6, M.woodLight, 0, 0.75, 0));
       for (const x of [-p.w / 2 + 0.06, p.w / 2 - 0.06]) for (const z of [-0.24, 0.24]) g.add(woodBox(0.05, 0.73, 0.05, M.wood, x, 0.365, z));
@@ -389,6 +411,36 @@ export const CATALOG = {
     top: () => 0.9,
   },
 
+  sandik: {
+    ad: 'Askeri Sandık', kat: 'Tahtalar ve Engeller',
+    params: [{ k: 'adet', ad: 'İstif adedi', tip: 'sayi', def: 1, min: 1, max: 4, step: 1 }],
+    build: (p) => {
+      const g = new THREE.Group();
+      let y = 0;
+      for (let i = 0; i < p.adet; i++) {
+        const m = modelClone('crate') || (() => { const x = new THREE.Group(); x.add(box(0.9, 0.45, 0.5, M.wood, 0, 0.225, 0)); return x; })();
+        const h = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3()).y;
+        m.position.y = y;
+        m.rotation.y = (i % 2) * 0.12;
+        y += h;
+        g.add(m);
+      }
+      g.userData.h = y;
+      return g;
+    },
+    top: (p) => 0.45 * p.adet + 0.15,
+  },
+  muhimmat: {
+    ad: 'Mühimmat Kutusu', kat: 'Tahtalar ve Engeller',
+    params: [],
+    build: () => {
+      const m = modelClone('ammo');
+      const g = new THREE.Group();
+      g.add(m || box(0.3, 0.18, 0.15, M.uniform, 0, 0.09, 0));
+      return g;
+    },
+    top: () => 0.4,
+  },
   kaide: {
     ad: 'Atış Kaidesi', kat: 'Atış Alanı', rol: 'nokta',
     params: [],
@@ -508,6 +560,24 @@ export const CATALOG = {
     top: (p) => (p.poz === 'ayakta' ? 1.85 : p.poz === 'diz' ? 1.45 : 0.5),
   },
 };
+
+function tyreFlat() {
+  const m = modelClone('tyre');
+  const b = new THREE.Box3().setFromObject(m), s = b.getSize(new THREE.Vector3());
+  // lastik dik duruyorsa yatır
+  if (s.y > Math.min(s.x, s.z) * 1.2) {
+    const inner = m.children[0];
+    if (s.x < s.z) inner.parent.rotation.z = Math.PI / 2; else inner.parent.rotation.x = Math.PI / 2;
+    const w = new THREE.Group();
+    w.add(m);
+    const b2 = new THREE.Box3().setFromObject(w), c = b2.getCenter(new THREE.Vector3());
+    m.position.set(-c.x, -b2.min.y, -c.z);
+    w.userData.h = b2.getSize(new THREE.Vector3()).y;
+    return w;
+  }
+  m.userData.h = s.y;
+  return m;
+}
 
 function wall(w, h, holes) {
   const g = new THREE.Group();

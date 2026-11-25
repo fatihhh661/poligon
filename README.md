@@ -30,3 +30,12 @@ npm install
 npm start        # derle ve masaüstünde çalıştır
 npm run paket    # Windows paketi üret (dist/)
 ```
+
+## Grafik varlıkları
+
+Gerçekçi görünüm için Poly Haven'ın CC0 (serbest lisanslı) fotoğraf tabanlı dokuları, HDR gökyüzleri ve taranmış modelleri kullanılır (`app/assets`). Yeniden indirmek için:
+
+```bash
+node scripts/fetch-assets.mjs
+python3 scripts/make-branch.py
+```

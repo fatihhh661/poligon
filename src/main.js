@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Engine, QUALITY } from './engine.js';
 import { Environment } from './environment.js';
 import { getTextures } from './textures.js';
+import { loadAssets } from './assets.js';
 import { initMaterials, CATALOG, isPoint, isTarget } from './objects.js';
 import { Editor, emptyState } from './editor.js';
 import { renderThumbs } from './thumbs.js';
@@ -71,16 +72,20 @@ async function boot() {
   engine = new Engine($('#stage'));
   await nextFrame();
 
-  progress(0.14, 'Dokular üretiliyor');
-  await wait(30);
+  progress(0.12, 'Fotoğraf dokuları ve modeller yükleniyor');
+  try {
+    await loadAssets(engine.renderer, (p) => progress(0.12 + p * 0.2));
+  } catch (e) {
+    console.warn('Varlıklar yüklenemedi, basit görünüm kullanılacak', e);
+  }
   const tex = getTextures(engine.renderer);
   initMaterials(tex);
-  progress(0.32, 'Gökyüzü ve ışık hesaplanıyor');
+  progress(0.34, 'Gökyüzü ve ışık hesaplanıyor');
   await nextFrame();
 
   env = new Environment(engine.renderer, engine.scene, tex);
   env.quality = S.kalite;
-  env.setTime(S.saat);
+  await env.setTime(S.saat);
   ed = new Editor(engine, env);
   ed.opts.snap = S.snap;
   engine.initControls();
@@ -111,6 +116,7 @@ async function boot() {
   progress(1, 'Hazır');
 
   minimap = new Minimap($('#mmCanvas'), ed, engine);
+  window.__pp = { engine, env, ed };
   wireEditor();
   wireUI();
 
@@ -532,7 +538,7 @@ async function openSettings() {
         if (treesChanged) env.build(ed.state.poligon.w, ed.state.poligon.d);
         updateStatus();
       });
-      seg('#setT', (v) => { S.saat = v; env.setTime(v); });
+      seg('#setT', async (v) => { S.saat = v; await env.setTime(v); });
       seg('#setS', (v) => (S.ses = v === '1'));
       seg('#setTour', (v) => (S.ilkTur = v === '1'));
       if (m.querySelector('#setHw')) seg('#setHw', async (v) => {
