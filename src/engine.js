@@ -47,6 +47,7 @@ export class Engine {
 
     this.lineMats = new Set();
     this.onFrame = [];
+    this.afterRender = [];
     this.tween = null;
     this.cinematic = null;
     this.quality = 'yuksek';
@@ -162,6 +163,7 @@ export class Engine {
       this.fps = this.fps * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
       this.update(dt);
       this.composer.render();
+      for (const f of this.afterRender) f();
     };
     loop();
   }

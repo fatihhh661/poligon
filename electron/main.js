@@ -174,6 +174,17 @@ ipcMain.handle('save-png', async (_e, { defName, dataUrl }) => {
   return r.filePath;
 });
 
+ipcMain.handle('save-video', async (_e, { defName, data, ext }) => {
+  const r = await dialog.showSaveDialog(win, {
+    title: 'Videoyu Kaydet',
+    defaultPath: path.join(app.getPath('videos'), defName || 'parkur.' + (ext || 'mp4')),
+    filters: [{ name: ext === 'webm' ? 'WebM Video' : 'MP4 Video', extensions: [ext || 'mp4'] }],
+  });
+  if (r.canceled || !r.filePath) return null;
+  fs.writeFileSync(r.filePath, Buffer.from(data));
+  return r.filePath;
+});
+
 ipcMain.on('set-dirty', (_e, v) => { dirty = !!v; });
 ipcMain.on('get-safe', (e) => { e.returnValue = safeMode; });
 ipcMain.on('boot-log', (_e, m) => log('Açılış: ' + m));

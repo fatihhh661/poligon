@@ -45,21 +45,7 @@ function twoBoneIK(upper, lower, end, target, pole) {
   pointBone(lower, end, a.clone().addScaledVector(dir, d));
 }
 
-function curlFingers(root, side, amount) {
-  const axis = 'z';
-  for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
-    for (let i = 1; i <= 3; i++) {
-      const b = root.getObjectByName(`mixamorig${side}Hand${f}${i}`);
-      if (b) b.rotation[axis] += (side === 'Right' ? -1 : 1) * amount * (i === 1 ? 0.8 : 1.1);
-    }
-  }
-  for (let i = 1; i <= 3; i++) {
-    const b = root.getObjectByName(`mixamorig${side}HandThumb${i}`);
-    if (b) b.rotation.x += amount * 0.25;
-  }
-}
 
-// ----------------- kamuflaj -----------------
 let camoTex = null;
 function makeCamo() {
   if (camoTex) return camoTex;
@@ -127,106 +113,190 @@ function camoMaterial(src) {
 }
 
 // ----------------- asker -----------------
-let camoCache = new WeakMap();
 
-export function buildSoldier(pose = 'ayakta', silah = 'tufek') {
-  const src = A.models.soldier;
-  if (!src) return null;
-  const root = skClone(src);
-  const group = new THREE.Group();
-  group.add(root);
-  root.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-      o.frustumCulled = false;
-      o.userData.sharedGeo = true;
-      if (o.name.includes('Mesh')) {
-        if (!camoCache.has(o.material)) camoCache.set(o.material, camoMaterial(o.material));
-        o.material = camoCache.get(o.material);
+// ----------------- asker iskelet kontrolcüsü -----------------
+const camoCache = new WeakMap();
+const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'];
+
+/**
+ * Silahlı asker. Her karede: animasyon (bekleme/yürüme/koşma) + duruş (ayakta/diz/yüzüstü)
+ * + üst gövde nişan pozu (IK ile eller silahta) uygulanır.
+ */
+export class Rig {
+  constructor(silah = 'tufek') {
+    const src = A.models.soldier;
+    this.ok = !!src;
+    this.group = new THREE.Group();
+    this.silah = silah;
+    this.state = { stance: 'ayakta', aim: true, pitch: 0, recoil: 0, lowReady: false };
+    if (!src) return;
+    const root = (this.root = skClone(src));
+    this.group.add(root);
+    root.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.frustumCulled = false;
+        o.userData.sharedGeo = true;
+        if (o.name.includes('Mesh')) {
+          if (!camoCache.has(o.material)) camoCache.set(o.material, camoMaterial(o.material));
+          o.material = camoCache.get(o.material);
+        }
       }
+    });
+    const bones = {};
+    root.traverse((o) => { if (o.isBone) bones[o.name.replace('mixamorig', '')] = o; });
+    this.B = (n) => bones[n];
+    this.mixer = new THREE.AnimationMixer(root);
+    this.actions = {};
+    for (const clip of A.anims?.soldier || []) this.actions[clip.name] = this.mixer.clipAction(clip);
+    this.cur = this.actions.Idle || null;
+    if (this.cur) this.cur.play();
+    this.mixer.update(0);
+    // parmakların temel dönüşleri
+    this.fingerBase = {};
+    for (const side of ['Right', 'Left']) {
+      for (const f of FINGERS) for (let i = 1; i <= 3; i++) { const b = this.B(`${side}Hand${f}${i}`); if (b) this.fingerBase[b.uuid] = b.quaternion.clone(); }
+      for (let i = 1; i <= 3; i++) { const b = this.B(`${side}HandThumb${i}`); if (b) this.fingerBase[b.uuid] = b.quaternion.clone(); }
     }
-  });
-  // temel duruş: "Idle" animasyonunun ilk karesi
-  const idle = A.anims?.soldier?.find((a) => a.name === 'Idle');
-  if (idle) {
-    const mx = new THREE.AnimationMixer(root);
-    mx.clipAction(idle).play();
-    mx.update(0.0);
-    mx.stopAllAction();
+    this.weapon = silah === 'tabanca' ? pistolModel() : rifleModel();
+    if (this.weapon) this.group.add(this.weapon.obj);
+    this.update(0);
   }
-  group.updateMatrixWorld(true);
-  const B = (n) => root.getObjectByName('mixamorig' + n);
-  const hips = B('Hips'), spine = B('Spine'), spine1 = B('Spine1'), spine2 = B('Spine2'), neck = B('Neck'), head = B('Head');
 
-  if (pose === 'yuzustu') {
-    root.rotation.x = -Math.PI / 2;
-    root.position.set(0, 0.16, 0.85);
-    group.updateMatrixWorld(true);
-    // bacaklar hafif açık
-    rotWorld(B('LeftUpLeg'), V(0, 1, 0), -0.18);
-    rotWorld(B('RightUpLeg'), V(0, 1, 0), 0.22);
-    // baş ve göğüs kalkık
-    rotWorld(spine2, V(1, 0, 0), 0.25);
-    rotWorld(neck, V(1, 0, 0), 0.55);
-    rotWorld(head, V(1, 0, 0), 0.35);
-  } else if (pose === 'diz') {
-    hips.position.y -= 0; // aşağıda IK ile yerleştirilecek
-    const drop = 0.46;
-    root.position.y = -drop;
-    group.updateMatrixWorld(true);
-    // sol ayak önde basılı, sağ diz yerde
-    twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), V(-0.12, 0.1, -0.42), V(-0.12, 0.6, -1.5));
-    twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), V(0.14, 0.12, 0.42), V(0.14, -1, -0.4));
-    rotWorld(B('RightFoot'), V(1, 0, 0), -0.9);
-    rotWorld(spine, V(1, 0, 0), 0.12);
-  } else {
-    // ayakta: hafif öne eğilmiş, ayaklar açık
-    rotWorld(spine, V(1, 0, 0), 0.08);
-    rotWorld(spine1, V(0, 1, 0), 0.12);
+  /** Hareket animasyonunu seç: hız (m/sn), geri yürüyüş için negatif */
+  setMove(speed) {
+    if (!this.mixer) return;
+    const a = Math.abs(speed);
+    const st = this.state.stance;
+    let want = 'Idle', ts = 1;
+    if (st === 'ayakta' && a > 0.15) {
+      if (a > 2.6 && this.actions.Run) { want = 'Run'; ts = a / 5.0; }
+      else { want = 'Walk'; ts = Math.max(0.5, a / 1.45); }
+    }
+    if (speed < -0.15) ts = -ts;
+    const next = this.actions[want] || this.cur;
+    if (next && next !== this.cur) {
+      next.reset().play();
+      if (this.cur) this.cur.crossFadeTo(next, 0.25, false);
+      this.cur = next;
+    }
+    if (this.cur) this.cur.timeScale = ts;
   }
-  group.updateMatrixWorld(true);
 
-  // ----- silah -----
-  const weapon = silah === 'tabanca' ? pistolModel() : rifleModel();
-  if (weapon) {
-    group.add(weapon.obj);
-    const sh = wpos(B('RightArm'));
-    const hd = wpos(head);
-    let fwd = V(0, 0, -1);
-    if (silah === 'tabanca') {
-      // iki elle nişan: kollar ileri uzanmış, tabanca göz hizasında
-      const p = V((sh.x + wpos(B('LeftArm')).x) / 2 + 0.03, hd.y - 0.06, hd.z - 0.62);
-      if (pose === 'yuzustu') p.set(0.03, 0.32, hd.z - 0.6);
-      weapon.obj.position.copy(p);
-      weapon.obj.updateMatrixWorld(true);
+  update(dt) {
+    if (!this.root) return;
+    const g = this.group, root = this.root, B = this.B, s = this.state;
+    this.mixer.update(dt);
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    g.updateMatrixWorld(true);
+    const L = (x, y, z) => g.localToWorld(V(x, y, z));
+    const toL = (v) => g.worldToLocal(v.clone());
+    const right = V(1, 0, 0).transformDirection(g.matrixWorld);
+    const back = V(0, 0, 1).transformDirection(g.matrixWorld);
+    const up = V(0, 1, 0);
+    const spine = B('Spine'), spine1 = B('Spine1'), spine2 = B('Spine2'), neck = B('Neck'), head = B('Head');
+
+    if (s.stance === 'yuzustu') {
+      root.rotation.x = -Math.PI / 2;
+      root.position.set(0, 0.16, 0.85);
+      g.updateMatrixWorld(true);
+      rotWorld(B('LeftUpLeg'), up, -0.18);
+      rotWorld(B('RightUpLeg'), up, 0.22);
+      rotWorld(spine2, right, 0.25);
+      rotWorld(neck, right, 0.55);
+      rotWorld(head, right, 0.35);
+    } else if (s.stance === 'diz') {
+      root.position.y = -0.46;
+      g.updateMatrixWorld(true);
+      twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.12, 0.1, -0.42), L(-0.12, 0.6, -1.5));
+      twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42), L(0.14, -1, -0.4));
+      rotWorld(B('RightFoot'), right, -0.9);
+      rotWorld(spine, right, 0.12);
     } else {
-      // dipçik sağ omuzda, nişangah göz hizasında
-      const butt = V(sh.x - 0.07, hd.y - 0.12, sh.z - 0.06);
-      if (pose === 'yuzustu') butt.set(sh.x - 0.08, sh.y + 0.02, sh.z - 0.05);
-      weapon.obj.position.copy(butt).addScaledVector(fwd, weapon.buttOffset);
-      weapon.obj.updateMatrixWorld(true);
+      rotWorld(spine, right, 0.06);
+      rotWorld(spine1, up, 0.12);
     }
-    const gR = weapon.obj.localToWorld(weapon.gripR.clone());
-    const gL = weapon.obj.localToWorld(weapon.gripL.clone());
-    const shR = wpos(B('RightArm')), shL = wpos(B('LeftArm'));
-    const poleR = pose === 'yuzustu' ? V(shR.x + 0.3, -0.5, shR.z - 0.2) : V(shR.x + 0.6, shR.y - 0.5, shR.z + 0.1);
-    const poleL = pose === 'yuzustu' ? V(shL.x - 0.2, -0.5, shL.z - 0.3) : silah === 'tabanca' ? V(shL.x - 0.6, shL.y - 0.5, shL.z) : V(shL.x - 0.1, shL.y - 0.9, shL.z - 0.2);
-    // baş: yanağı dipçiğe yasla
-    if (silah !== 'tabanca') {
-      rotWorld(neck, V(0, 0, 1), -0.12);
-      rotWorld(head, V(1, 0, 0), 0.12);
+    // yukarı/aşağı nişan: gövde ve baş eğilir
+    const pitch = s.pitch || 0;
+    if (s.stance !== 'yuzustu') {
+      rotWorld(spine2, right, pitch * 0.45);
+      rotWorld(neck, right, pitch * 0.25);
+    }
+    g.updateMatrixWorld(true);
+    const W = this.weapon;
+    if (!W) return;
+    const sL = toL(wpos(B('RightArm'))), sLl = toL(wpos(B('LeftArm'))), hL = toL(wpos(head));
+    const low = !s.aim;
+    const rec = s.recoil || 0;
+    const o = W.obj;
+    if (this.silah === 'tabanca') {
+      o.rotation.set(low ? pitch - 0.7 : pitch + rec * 0.25, 0, 0);
+      const p = V((sL.x + sLl.x) / 2 + 0.03, hL.y - (low ? 0.42 : 0.06), hL.z - (low ? 0.38 : 0.62) + rec * 0.04);
+      if (s.stance === 'yuzustu') p.set(0.03, 0.32, hL.z - 0.6);
+      o.position.copy(p);
+    } else {
+      o.rotation.set(low ? pitch - 0.62 : pitch + rec * 0.08, low ? 0.45 : 0, 0);
+      const butt = low ? V(sL.x - 0.02, hL.y - 0.32, sL.z - 0.12) : V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06 + rec * 0.05);
+      if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, sL.y + 0.02, sL.z - 0.05);
+      const dir = V(0, 0, -1).applyEuler(o.rotation);
+      o.position.copy(butt).addScaledVector(dir, W.buttOffset);
+    }
+    g.updateMatrixWorld(true);
+    const gR = o.localToWorld(W.gripR.clone());
+    const gL = o.localToWorld(W.gripL.clone());
+    let poleR, poleL;
+    if (s.stance === 'yuzustu') { poleR = L(sL.x + 0.3, -0.5, sL.z - 0.2); poleL = L(sLl.x - 0.2, -0.5, sLl.z - 0.3); }
+    else {
+      poleR = L(sL.x + 0.6, sL.y - 0.5, sL.z + 0.1);
+      poleL = this.silah === 'tabanca' ? L(sLl.x - 0.6, sLl.y - 0.5, sLl.z) : L(sLl.x - 0.1, sLl.y - 0.9, sLl.z - 0.2);
+    }
+    if (this.silah !== 'tabanca' && !low) {
+      rotWorld(neck, back, -0.12);
+      rotWorld(head, right, 0.12);
     }
     twoBoneIK(B('RightArm'), B('RightForeArm'), B('RightHand'), gR, poleR);
     twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), gL, poleL);
-    // eller silah yönünde
+    const fw = V(0, 0, -1).applyEuler(o.rotation).transformDirection(g.matrixWorld);
     const hr = wpos(B('RightHand')), hl = wpos(B('LeftHand'));
-    pointBone(B('RightHand'), B('RightHandMiddle1'), hr.clone().add(V(-0.03, -0.08, -0.06)));
-    pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().add(silah === 'tabanca' ? V(0.06, -0.02, -0.06) : V(0.07, -0.02, -0.04)));
-    curlFingers(root, 'Right', 0.9);
-    curlFingers(root, 'Left', silah === 'tabanca' ? 0.9 : 0.6);
+    pointBone(B('RightHand'), B('RightHandMiddle1'), hr.clone().addScaledVector(fw, 0.06).addScaledVector(up, -0.08).addScaledVector(right, -0.03));
+    pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
+    this.curl('Right', 0.9);
+    this.curl('Left', this.silah === 'tabanca' ? 0.9 : 0.6);
   }
-  return group;
+
+  curl(side, amount) {
+    const B = this.B;
+    for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
+      const b = B(`${side}Hand${f}${i}`);
+      if (!b) continue;
+      b.quaternion.copy(this.fingerBase[b.uuid]);
+      b.rotation.z += (side === 'Right' ? -1 : 1) * amount * (i === 1 ? 0.8 : 1.1);
+    }
+    for (let i = 1; i <= 3; i++) {
+      const b = B(`${side}HandThumb${i}`);
+      if (!b) continue;
+      b.quaternion.copy(this.fingerBase[b.uuid]);
+      b.rotation.x += amount * 0.25;
+    }
+  }
+
+  /** Namlu ucunun dünya konumu */
+  muzzle() {
+    if (!this.weapon) return wpos(this.group).add(V(0, 1.4, 0));
+    return this.weapon.obj.localToWorld(this.weapon.muzzle.clone());
+  }
+}
+
+/** Editördeki sabit atıcı figürü */
+export function buildSoldier(pose = 'ayakta', silah = 'tufek') {
+  if (!A.models.soldier) return null;
+  const r = new Rig(silah);
+  r.state.stance = pose;
+  r.update(0);
+  r.group.userData.rig = r;
+  return r.group;
 }
 
 function rifleModel() {
@@ -255,6 +325,7 @@ function rifleModel() {
     buttOffset: 0.63, // dipçikten ileri doğru model merkezine
     gripR: V(0, -0.06, 0.3),
     gripL: V(-0.01, -0.03, -0.12),
+    muzzle: V(0, 0.02, -0.62),
   };
 }
 
@@ -287,5 +358,5 @@ function pistolModel() {
   }
   inner.rotation.y = Math.PI / 2; // namlu ileri
   obj.add(inner);
-  return { obj, buttOffset: 0, gripR: V(0, -0.05, 0.05), gripL: V(-0.035, -0.06, 0.04) };
+  return { obj, buttOffset: 0, gripR: V(0, -0.05, 0.05), gripL: V(-0.035, -0.06, 0.04), muzzle: V(0, 0.03, -0.16) };
 }

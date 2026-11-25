@@ -3,6 +3,7 @@ import { Engine, QUALITY } from './engine.js';
 import { Environment } from './environment.js';
 import { getTextures } from './textures.js';
 import { loadAssets } from './assets.js';
+import { PlayMode } from './play.js';
 import { initMaterials, CATALOG, isPoint, isTarget } from './objects.js';
 import { Editor, emptyState } from './editor.js';
 import { renderThumbs } from './thumbs.js';
@@ -25,6 +26,15 @@ let docPath = null;
 let dirty = false;
 let phase = 'splash';
 let activeView = null;
+let play = null;
+
+function startPlay() {
+  if (phase !== 'editor') return;
+  if (!play) play = new PlayMode({ engine, editor: ed, env, settings: S, toast, onExit: () => { phase = 'editor'; renderAll(); } });
+  phase = 'play';
+  play.enter();
+  window.__pp.play = play;
+}
 
 // ======================= AÇILIŞ =======================
 const T0 = performance.now();
@@ -650,6 +660,7 @@ function wireUI() {
     else if (c === 'oto') { ed.opts.autoDist = !ed.opts.autoDist; b.classList.toggle('on', ed.opts.autoDist); ed.refreshAuto(); }
     else if (c === 'etiket') { ed.setLabelsVisible(!ed.opts.labels); b.classList.toggle('on', ed.opts.labels); }
     else if (c === 'png') exportPng();
+    else if (c === 'uygula') startPlay();
     else if (c === 'ayarlar') openSettings();
   });
   $('[data-cmd="oto"]').classList.add('on');
@@ -827,6 +838,7 @@ function wireUI() {
     else if (k === 'm') ed.setMode(ed.mode === 'olc' ? 'sec' : 'olc');
     else if (k === 'v') ed.setMode('sec');
     else if (k === 'f') focusSelected();
+    else if (k === 'p') startPlay();
     else if (['1', '2', '3', '4', '5', '6'].includes(k)) setView(['kus', 'genel', 'atici', 'hedef', 'yan', 'drone'][+k - 1]);
     else if (k.startsWith('arrow') && ed.cur()) {
       e.preventDefault();

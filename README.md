@@ -39,3 +39,10 @@ Gerçekçi görünüm için Poly Haven'ın CC0 (serbest lisanslı) fotoğraf tab
 node scripts/fetch-assets.mjs
 python3 scripts/make-branch.py
 ```
+
+## Uygulama Modu (askerle parkur + video)
+
+Araç çubuğundaki **Uygulama Modu** (veya `P`) ile asker başlangıç noktasında belirir. W A S D ile yürüyün, Shift ile koşun, fareyle bakın, sağ tıkla nişan alın, sol tıkla ateş edin; C diz çökme, Z yüzüstü. **Kayıtla Başla** veya `R` ile ekran, süre/isabet bilgileri ve atış sesleriyle birlikte MP4 video olarak kaydedilir.
+
+### Mixamo ile daha gerçekçi asker (isteğe bağlı)
+mixamo.com'dan (ücretsiz Adobe hesabı) bir asker karakteri (FBX, With Skin) ve tüfekli yürüme/koşma/nişan/ateş animasyonları (FBX, Without Skin, In Place) indirip depodaki `modeller/` klasörüne yükleyin; program bunlarla güncellenecektir.
