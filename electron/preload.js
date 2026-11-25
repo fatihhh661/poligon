@@ -7,4 +7,8 @@ contextBridge.exposeInMainWorld('native', {
   readFile: (p) => ipcRenderer.invoke('read-file', p),
   savePng: (o) => ipcRenderer.invoke('save-png', o),
   setDirty: (v) => ipcRenderer.send('set-dirty', v),
+  safeMode: ipcRenderer.sendSync('get-safe'),
+  bootLog: (m) => ipcRenderer.send('boot-log', m),
+  booted: () => ipcRenderer.send('booted'),
+  setHw: (on) => ipcRenderer.send('set-hw', on),
 });

@@ -1,30 +1,79 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 let win = null;
 let dirty = false;
 
-// --- hata günlüğü: %APPDATA%/Poligon Pro/poligon-hata.log ---
-function logErr(msg) {
-  try {
-    const f = path.join(app.getPath('userData'), 'poligon-hata.log');
-    fs.appendFileSync(f, `[${new Date().toISOString()}] ${msg}\n`);
-  } catch (e) { /* */ }
+// ---------------- günlük ----------------
+// Taşınabilir exe ise günlük exe'nin yanına yazılır (kullanıcı kolayca bulabilsin).
+const portableDir = process.env.PORTABLE_EXECUTABLE_DIR || null;
+function logFiles() {
+  const list = [];
+  if (portableDir) list.push(path.join(portableDir, 'PoligonPro-gunluk.txt'));
+  try { list.push(path.join(app.getPath('userData'), 'PoligonPro-gunluk.txt')); } catch (e) { /* */ }
+  return list;
+}
+function log(msg) {
+  const line = `[${new Date().toLocaleString('tr-TR')}] ${msg}\r\n`;
+  for (const f of logFiles()) {
+    try { fs.appendFileSync(f, line); } catch (e) { /* */ }
+  }
 }
 process.on('uncaughtException', (e) => {
-  logErr('uncaughtException: ' + (e && e.stack || e));
-  try { dialog.showErrorBox('Poligon Pro - Hata', String(e && e.message || e)); } catch (x) { /* */ }
+  log('HATA (ana süreç): ' + ((e && e.stack) || e));
+  try { dialog.showErrorBox('Poligon Pro - Hata', String((e && e.message) || e)); } catch (x) { /* */ }
 });
-app.on('child-process-gone', (_e, d) => logErr(`child-process-gone: ${d.type} ${d.reason} ${d.exitCode}`));
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
+// ---------------- uyumluluk (güvenli) modu ----------------
+// Önceki açılış tamamlanamadıysa (ekran kartı kaynaklı çökme) yazılım çizimine geçilir.
+const stateFile = path.join(app.getPath('userData'), 'baslatma.json');
+let st = { pending: false, safe: false };
+try { st = { ...st, ...JSON.parse(fs.readFileSync(stateFile, 'utf8')) }; } catch (e) { /* ilk açılış */ }
+const forceSafe = process.argv.includes('--guvenli');
+const forceHw = process.argv.includes('--donanim');
+let safeMode = !forceHw && (forceSafe || st.safe || st.pending);
+if (st.pending && !st.safe) log('Önceki açılış tamamlanamamış: uyumluluk moduna geçiliyor.');
+function saveState(o) {
+  st = { ...st, ...o };
+  try { fs.mkdirSync(path.dirname(stateFile), { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(st)); } catch (e) { /* */ }
+}
+saveState({ pending: true });
+
+log(`--- Poligon Pro başlatılıyor | Electron ${process.versions.electron} | Windows ${os.release()} | ${os.arch()} | RAM ${(os.totalmem() / 1073741824).toFixed(1)} GB | mod: ${safeMode ? 'UYUMLULUK' : 'normal'}`);
+
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+if (safeMode) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+}
+
+function relaunchSafe(reason) {
+  if (safeMode) return false;
+  log('Ekran kartı sorunu (' + reason + '): uyumluluk modunda yeniden başlatılıyor.');
+  saveState({ safe: true, pending: false });
+  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--donanim').concat('--guvenli') });
+  app.exit(0);
+  return true;
+}
+
+app.on('child-process-gone', (_e, d) => {
+  log(`Alt süreç kapandı: ${d.type} / ${d.reason} / kod ${d.exitCode}`);
+  if (d.type === 'GPU' && ['crashed', 'launch-failed', 'abnormal-exit', 'oom'].includes(d.reason) && !booted) relaunchSafe('GPU ' + d.reason);
+});
+app.on('gpu-info-update', () => {});
+
+let booted = false;
 
 function createWindow() {
+  log('Pencere oluşturuluyor');
   win = new BrowserWindow({
     width: 1600,
     height: 940,
-    minWidth: 1180,
-    minHeight: 720,
+    minWidth: 1100,
+    minHeight: 680,
     show: true,
     backgroundColor: '#050605',
     title: 'Poligon Pro',
@@ -41,20 +90,22 @@ function createWindow() {
     },
   });
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, '..', 'app', 'index.html'));
   win.maximize();
+  win.loadFile(path.join(__dirname, '..', 'app', 'index.html')).catch((e) => log('Sayfa yüklenemedi: ' + e));
+  win.webContents.on('did-finish-load', () => log('Arayüz yüklendi'));
+  win.webContents.on('did-fail-load', (_e, code, desc) => log(`Sayfa yükleme hatası: ${code} ${desc}`));
+  win.webContents.on('console-message', (_e, level, message) => { if (level >= 2) log('Arayüz: ' + message); });
   win.webContents.on('render-process-gone', (_e, d) => {
-    logErr(`render-process-gone: ${d.reason} ${d.exitCode}`);
+    log(`Arayüz süreci kapandı: ${d.reason} / kod ${d.exitCode}`);
+    if (!booted && relaunchSafe('arayüz ' + d.reason)) return;
     const r = dialog.showMessageBoxSync(win, {
       type: 'error', buttons: ['Yeniden Başlat', 'Kapat'], title: 'Poligon Pro',
       message: 'Program beklenmedik şekilde durdu.',
-      detail: 'Ekran kartı sürücüsü ile ilgili bir sorun olabilir. Yeniden başlatmayı deneyin.',
+      detail: 'Yeniden başlatmayı deneyin. Sorun sürerse PoligonPro-gunluk.txt dosyasını gönderin.',
     });
     if (r === 0) win.reload(); else app.quit();
   });
-  win.webContents.on('did-fail-load', (_e, code, desc) => logErr(`did-fail-load: ${code} ${desc}`));
-  win.webContents.on('console-message', (_e, level, message) => { if (level >= 3) logErr('renderer: ' + message); });
-  // dış bağlantıları tarayıcıda aç, uygulama içinde gezinmeyi engelle
+  win.webContents.on('unresponsive', () => log('Arayüz yanıt vermiyor'));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -77,6 +128,7 @@ function createWindow() {
     });
     if (r === 1) e.preventDefault();
   });
+  win.on('closed', () => log('Pencere kapatıldı'));
 }
 
 const docs = () => app.getPath('documents');
@@ -123,9 +175,26 @@ ipcMain.handle('save-png', async (_e, { defName, dataUrl }) => {
 });
 
 ipcMain.on('set-dirty', (_e, v) => { dirty = !!v; });
+ipcMain.on('get-safe', (e) => { e.returnValue = safeMode; });
+ipcMain.on('boot-log', (_e, m) => log('Açılış: ' + m));
+ipcMain.on('booted', () => {
+  booted = true;
+  saveState({ pending: false, safe: safeMode });
+  log('Program başarıyla açıldı' + (safeMode ? ' (uyumluluk modu)' : ''));
+});
+ipcMain.on('set-hw', (_e, on) => {
+  // Ayarlardan "donanım hızlandırma" değiştirildi: yeniden başlat
+  saveState({ safe: !on, pending: false });
+  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--guvenli' && a !== '--donanim').concat(on ? '--donanim' : '--guvenli') });
+  app.exit(0);
+});
 
-app.whenReady().then(createWindow).catch((e) => {
-  logErr('whenReady: ' + (e && e.stack || e));
-  dialog.showErrorBox('Poligon Pro - Başlatma hatası', String(e && e.message || e));
+app.whenReady().then(() => {
+  log('Electron hazır');
+  createWindow();
+}).catch((e) => {
+  log('Başlatma hatası: ' + ((e && e.stack) || e));
+  dialog.showErrorBox('Poligon Pro - Başlatma hatası', String((e && e.message) || e));
 });
 app.on('window-all-closed', () => app.quit());
+app.on('quit', (_e, code) => log('Program kapandı (kod ' + code + ')'));

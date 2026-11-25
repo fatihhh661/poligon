@@ -20,7 +20,7 @@ const paths = await packager({
   appCopyright: 'Poligon Pro',
   appVersion: '1.0.0',
   win32metadata: { CompanyName: 'Poligon Pro', FileDescription: 'Poligon Pro - Parkur Tasarım ve Sunum Sistemi', ProductName: 'Poligon Pro', InternalName: 'PoligonPro', OriginalFilename: 'PoligonPro.exe' },
-  ignore: [/^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /\.map$/, /^\/build\/icon\.ico$/],
+  ignore: [/^\/indir($|\/)/, /^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /\.map$/, /^\/build\/icon\.ico$/],
 });
 console.log('Paket:', paths);
 const zip = join(out, 'PoligonPro-Windows.zip');

@@ -17,6 +17,8 @@ import {
 } from './ui.js';
 
 const S = store.loadSettings();
+const SAFE = !!window.native?.safeMode;
+if (SAFE) S.kalite = 'dusuk';
 let engine, env, ed, minimap, thumbs = {};
 let docPath = null;
 let dirty = false;
@@ -26,6 +28,7 @@ let activeView = null;
 // ======================= AÇILIŞ =======================
 const T0 = performance.now();
 const progress = (p, txt) => {
+  if (txt) window.native?.bootLog?.(`${Math.round(p * 100)}% ${txt}`);
   $('#spBar').style.width = Math.round(p * 100) + '%';
   $('#spPct').textContent = Math.round(p * 100) + '%';
   if (txt) $('#spTxt').textContent = txt;
@@ -115,6 +118,8 @@ async function boot() {
   while (performance.now() - T0 < minShow && !skipRequested) await wait(50);
   await revealScene();
   showMenu(true);
+  window.native?.booted?.();
+  if (SAFE) toast('Program uyumluluk modunda çalışıyor (ekran kartı yerine yazılımla çizim). Ayarlar\'dan değiştirebilirsiniz.', 'ok', 7000);
 }
 
 let cineT = 0;
@@ -506,6 +511,7 @@ async function openSettings() {
     </div>
     <div class="sec"><div class="sec-title">DİĞER</div>
       <div class="fld"><label>Açılış sesi</label><div class="seg" id="setS"><button data-v="1" class="${S.ses ? 'on' : ''}">Açık</button><button data-v="0" class="${!S.ses ? 'on' : ''}">Kapalı</button></div></div>
+      ${window.native ? `<div class="fld"><label>Donanım hızlandırma (ekran kartı)</label><div class="seg" id="setHw"><button data-v="1" class="${!SAFE ? 'on' : ''}">Açık</button><button data-v="0" class="${SAFE ? 'on' : ''}">Kapalı (uyumluluk)</button></div><small style="color:var(--muted)">Değiştirildiğinde program yeniden başlar. Program açılmıyor veya çöküyorsa Kapalı seçin.</small></div>` : ''}
       <div class="fld"><label>Hoş geldiniz ipuçları</label><div class="seg" id="setTour"><button data-v="1" class="${S.ilkTur ? 'on' : ''}">Göster</button><button data-v="0" class="${!S.ilkTur ? 'on' : ''}">Gösterme</button></div></div>
     </div>`;
   await modal({
@@ -529,6 +535,15 @@ async function openSettings() {
       seg('#setT', (v) => { S.saat = v; env.setTime(v); });
       seg('#setS', (v) => (S.ses = v === '1'));
       seg('#setTour', (v) => (S.ilkTur = v === '1'));
+      if (m.querySelector('#setHw')) seg('#setHw', async (v) => {
+        const on = v === '1';
+        if (on === !SAFE) return;
+        if (await confirmBox('Program yeniden başlatılacak. Kaydedilmemiş değişiklikler otomatik yedekte saklanır.', 'Yeniden başlat')) {
+          store.ls.set('pp.autosave', { state: ed.state, path: docPath, time: Date.now() });
+          setDirty(false);
+          window.native.setHw(on);
+        }
+      });
       m.querySelector('#setUnit').addEventListener('input', (e) => { S.birlik = e.target.value; store.saveSettings(S); applyBranding(); });
       m.querySelector('#setLogoBtn').onclick = () => {
         const fi = $('#logoIn');
