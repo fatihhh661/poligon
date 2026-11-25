@@ -6,7 +6,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 export const A = { pbr: {}, tex: {}, models: {}, anims: {}, ok: false };
 
 const PBR = ['gravel', 'berm', 'grass', 'forest', 'rock', 'plywood', 'wood', 'roof', 'concrete', 'sand'];
-const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub', 'soldier', 'rifle', 'pistol', 'mark'];
+const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub', 'soldier', 'rifle', 'pistol', 'mark', 'm4'];
 
 let aniso = 8;
 const tl = new THREE.TextureLoader();
@@ -46,7 +46,14 @@ export async function loadAssets(renderer, onProgress = () => {}) {
           if (o.material.map) o.material.map.anisotropy = aniso;
         }
       });
-      if (k === 'mark') for (const c of g.scene.children) c.rotation.y += Math.PI; // model +Z'ye bakıyor; -Z'ye çevir
+      if (k === 'mark') {
+        // model +Z'ye bakıyor; -Z'ye çevir (kök dönüşü Rig tarafından sıfırlandığı için ara grup)
+        const w = new THREE.Group();
+        w.name = 'yonDuzelt';
+        w.rotation.y = Math.PI;
+        for (const c of [...g.scene.children]) w.add(c);
+        g.scene.add(w);
+      }
       A.models[k] = g.scene;
       A.anims[k] = g.animations;
     });

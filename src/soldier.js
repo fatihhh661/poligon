@@ -137,7 +137,16 @@ const markMats = new Map();
 function markMaterial(src) {
   if (markMats.has(src.name)) return markMats.get(src.name);
   let m = src;
-  if (!src.map) {
+  if (src.map) {
+    // kumaş/teçhizat: metal değil (metalik kanal kumaşı karartıyordu)
+    m = src.clone();
+    m.metalness = 0;
+    m.metalnessMap = null;
+    if (/Head/.test(src.name)) m.roughness = 0.75;
+    m.aoMap = null; // ARM dokusunun kırmızı kanalı boş: dolaylı ışığı tamamen söndürüyordu
+    m.envMapIntensity = 1.4;
+    if (!/Head|Eye|Glus/.test(src.name)) m.color.setScalar(1.75); // dokular koyu kaydedilmiş: sahne ışığına göre aydınlat
+  } else {
     const rule = MARK_COLORS.find(([re]) => re.test(src.name));
     if (rule && rule[1] === 'camo') {
       m = new THREE.MeshStandardMaterial({ map: makeCamo(), roughness: 0.92 });
@@ -461,7 +470,33 @@ export function buildSoldier(pose = 'ayakta', silah = 'tufek') {
   return r.group;
 }
 
+function m4Model() {
+  const src = A.models.m4;
+  if (!src) return null;
+  const m = src.clone(true);
+  m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.userData.sharedGeo = true; } });
+  const box = new THREE.Box3().setFromObject(m);
+  const c = box.getCenter(V());
+  const L = 0.84, k = L / (box.max.z - box.min.z);
+  const inner = new THREE.Group();
+  m.position.set(-c.x, -c.y, -c.z);
+  inner.add(m);
+  inner.scale.setScalar(k);
+  inner.rotation.y = Math.PI; // namlu -Z (ileri), dipçik +Z
+  const obj = new THREE.Group();
+  obj.add(inner);
+  return {
+    obj,
+    buttOffset: L / 2,
+    gripR: V(0, -0.065, 0.21),
+    gripL: V(-0.01, -0.005, -0.12),
+    muzzle: V(0, 0.03, -L / 2),
+  };
+}
+
 function rifleModel() {
+  const m4 = m4Model();
+  if (m4) return m4;
   const src = A.models.rifle;
   if (!src) return null;
   const m = src.clone(true);

@@ -76,6 +76,10 @@ export class Environment {
     this.sky.visible = false;
     scene.add(this.sky);
 
+    // gölgede kalan yüzeyler için yumuşak dolgu (gökyüzü / zemin yansıması)
+    this.fill = new THREE.HemisphereLight(0xcfe0ff, 0x9a8466, 1.6);
+    scene.add(this.fill);
+
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.00025;
