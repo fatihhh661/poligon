@@ -6,7 +6,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 export const A = { pbr: {}, tex: {}, models: {}, anims: {}, ok: false };
 
 const PBR = ['gravel', 'berm', 'grass', 'forest', 'rock', 'plywood', 'wood', 'roof', 'concrete', 'sand'];
-const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub', 'soldier', 'rifle', 'pistol'];
+const MODELS = ['barrel', 'tyre', 'table', 'crate', 'ammo', 'rock1', 'rock2', 'shrub', 'soldier', 'rifle', 'pistol', 'mark'];
 
 let aniso = 8;
 const tl = new THREE.TextureLoader();
@@ -46,6 +46,7 @@ export async function loadAssets(renderer, onProgress = () => {}) {
           if (o.material.map) o.material.map.anisotropy = aniso;
         }
       });
+      if (k === 'mark') for (const c of g.scene.children) c.rotation.y += Math.PI; // model +Z'ye bakıyor; -Z'ye çevir
       A.models[k] = g.scene;
       A.anims[k] = g.animations;
     });

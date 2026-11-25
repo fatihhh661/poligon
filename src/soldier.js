@@ -122,9 +122,130 @@ const FINGERS = ['Index', 'Middle', 'Ring', 'Pinky'];
  * Silahlı asker. Her karede: animasyon (bekleme/yürüme/koşma) + duruş (ayakta/diz/yüzüstü)
  * + üst gövde nişan pozu (IK ile eller silahta) uygulanır.
  */
+// ----------------- gerçekçi asker (Mark) -----------------
+const MARK_COLORS = [
+  [/Kitel|Pants/, 'camo'],
+  [/Plate|Pouches/, 0x4f5435],
+  [/Helmet/, 0x55593a],
+  [/Gloves/, 0x2a2a26],
+  [/Boots/, 0x3b3226],
+  [/Head/, 0xb88a6c],
+  [/Glus|Glass/, 0x0a0a0a],
+  [/Eye/, 0xe8e2da],
+];
+const markMats = new Map();
+function markMaterial(src) {
+  if (markMats.has(src.name)) return markMats.get(src.name);
+  let m = src;
+  if (!src.map) {
+    const rule = MARK_COLORS.find(([re]) => re.test(src.name));
+    if (rule && rule[1] === 'camo') {
+      m = new THREE.MeshStandardMaterial({ map: makeCamo(), roughness: 0.92 });
+      m.map = makeCamo().clone();
+      m.map.repeat.set(3, 3);
+      m.map.needsUpdate = true;
+    } else {
+      m = new THREE.MeshStandardMaterial({ color: rule ? rule[1] : 0x777766, roughness: /Glus/.test(src.name) ? 0.15 : 0.8, metalness: /Glus/.test(src.name) ? 0.4 : 0 });
+    }
+    m.name = src.name;
+    if (src.normalMap) m.normalMap = src.normalMap;
+  }
+  markMats.set(src.name, m);
+  return m;
+}
+
+const LIMB_CHILD = {
+  LeftShoulder: 'LeftArm', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand', LeftHand: 'LeftHandMiddle1',
+  RightShoulder: 'RightArm', RightArm: 'RightForeArm', RightForeArm: 'RightHand', RightHand: 'RightHandMiddle1',
+  LeftUpLeg: 'LeftLeg', LeftLeg: 'LeftFoot', LeftFoot: 'LeftToeBase',
+  RightUpLeg: 'RightLeg', RightLeg: 'RightFoot', RightFoot: 'RightToeBase',
+};
+for (const s of ['Left', 'Right']) for (const f of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) { LIMB_CHILD[`${s}Hand${f}1`] = `${s}Hand${f}2`; LIMB_CHILD[`${s}Hand${f}2`] = `${s}Hand${f}3`; }
+
+function boneMap(root) {
+  const m = {};
+  root.traverse((o) => { if (o.isBone && o.name.startsWith('mixamorig')) m[o.name.slice(9)] = o; });
+  return m;
+}
+function restPose(root) {
+  root.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.pose(); });
+  root.updateMatrixWorld(true);
+}
+
+/**
+ * Animasyonu farklı dinlenme pozuna sahip iskelete aktarır (dünya yönü hizalama + rotasyon farkı).
+ */
+const retargetCache = {};
+function retargetClips(tgtSrcModel) {
+  if (retargetCache.done) return retargetCache.clips;
+  const S = skClone(A.models.soldier), T = skClone(tgtSrcModel);
+  const holder = new THREE.Group();
+  holder.add(S, T);
+  restPose(S); restPose(T);
+  const sb = boneMap(S), tb = boneMap(T);
+  const names = Object.keys(tb).filter((n) => sb[n]);
+  // hedefi kaynağın dinlenme pozuna (T-poz) getir: kemik yönlerini hizala
+  const order = [];
+  T.traverse((o) => { if (o.isBone && o.name.startsWith('mixamorig')) order.push(o.name.slice(9)); });
+  for (const n of order) {
+    const c = LIMB_CHILD[n];
+    if (!c || !sb[n] || !sb[c] || !tb[c]) continue;
+    const td = wpos(tb[c]).sub(wpos(tb[n])).normalize();
+    const sd = wpos(sb[c]).sub(wpos(sb[n])).normalize();
+    rotWorld(tb[n], new THREE.Vector3().crossVectors(td, sd).normalize(), td.angleTo(sd));
+  }
+  T.updateMatrixWorld(true);
+  const sRest = {}, tRest = {};
+  for (const n of names) { sRest[n] = sb[n].getWorldQuaternion(new THREE.Quaternion()); tRest[n] = tb[n].getWorldQuaternion(new THREE.Quaternion()); }
+  const sHip0 = wpos(sb.Hips), tHip0 = wpos(tb.Hips);
+  const scale = tHip0.y / Math.max(0.01, sHip0.y);
+  const tHipLocal0 = tb.Hips.position.clone();
+  const tOrder = order.filter((n) => names.includes(n));
+  const clips = [];
+  for (const clip of A.anims.soldier) {
+    const mixer = new THREE.AnimationMixer(S);
+    const act = mixer.clipAction(clip);
+    act.play();
+    const fps = 30, N = Math.max(2, Math.round(clip.duration * fps) + 1);
+    const times = new Float32Array(N);
+    const qv = {}; for (const n of tOrder) qv[n] = new Float32Array(N * 4);
+    const pv = new Float32Array(N * 3);
+    const q = new THREE.Quaternion(), pw = new THREE.Quaternion(), inv = new THREE.Quaternion();
+    for (let i = 0; i < N; i++) {
+      const t = Math.min(clip.duration, i / fps);
+      times[i] = t;
+      mixer.setTime(t);
+      S.updateMatrixWorld(true);
+      for (const n of tOrder) {
+        const sw = sb[n].getWorldQuaternion(new THREE.Quaternion());
+        q.copy(sw).multiply(inv.copy(sRest[n]).invert()).multiply(tRest[n]);
+        // yerel = ebeveyn dünya^-1 * dünya (ebeveyn bu karede zaten ayarlandı)
+        tb[n].parent.getWorldQuaternion(pw);
+        const local = pw.invert().multiply(q);
+        tb[n].quaternion.copy(local);
+        tb[n].updateMatrixWorld(true);
+        local.toArray(qv[n], i * 4);
+      }
+      const d = wpos(sb.Hips).sub(sHip0).multiplyScalar(scale);
+      const parentInv = tb.Hips.parent.matrixWorld.clone().invert();
+      const p0w = tHip0.clone().add(d);
+      const pl = p0w.applyMatrix4(parentInv);
+      (pl || tHipLocal0).toArray(pv, i * 3);
+    }
+    const tracks = tOrder.map((n) => new THREE.QuaternionKeyframeTrack(`${tb[n].name}.quaternion`, times, qv[n]));
+    tracks.push(new THREE.VectorKeyframeTrack(`${tb.Hips.name}.position`, times, pv));
+    clips.push(new THREE.AnimationClip(clip.name, clip.duration, tracks));
+  }
+  retargetCache.done = true;
+  retargetCache.clips = clips;
+  return clips;
+}
+
 export class Rig {
   constructor(silah = 'tufek') {
-    const src = A.models.soldier;
+    const mark = A.models.mark;
+    const src = mark || A.models.soldier;
+    this.isMark = !!mark;
     this.ok = !!src;
     this.group = new THREE.Group();
     this.silah = silah;
@@ -138,7 +259,8 @@ export class Rig {
         o.receiveShadow = true;
         o.frustumCulled = false;
         o.userData.sharedGeo = true;
-        if (o.name.includes('Mesh')) {
+        if (this.isMark) o.material = markMaterial(o.material);
+        else if (o.name.includes('Mesh')) {
           if (!camoCache.has(o.material)) camoCache.set(o.material, camoMaterial(o.material));
           o.material = camoCache.get(o.material);
         }
@@ -149,7 +271,8 @@ export class Rig {
     this.B = (n) => bones[n];
     this.mixer = new THREE.AnimationMixer(root);
     this.actions = {};
-    for (const clip of A.anims?.soldier || []) this.actions[clip.name] = this.mixer.clipAction(clip);
+    const clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
+    for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);
     this.cur = this.actions.Idle || null;
     if (this.cur) this.cur.play();
     this.mixer.update(0);
@@ -159,6 +282,7 @@ export class Rig {
       for (const f of FINGERS) for (let i = 1; i <= 3; i++) { const b = this.B(`${side}Hand${f}${i}`); if (b) this.fingerBase[b.uuid] = b.quaternion.clone(); }
       for (let i = 1; i <= 3; i++) { const b = this.B(`${side}HandThumb${i}`); if (b) this.fingerBase[b.uuid] = b.quaternion.clone(); }
     }
+    if (this.isMark) this.setupCurl();
     this.weapon = silah === 'tabanca' ? pistolModel() : rifleModel();
     if (this.weapon) this.group.add(this.weapon.obj);
     this.update(0);
@@ -214,6 +338,9 @@ export class Rig {
       twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42), L(0.14, -1, -0.4));
       rotWorld(B('RightFoot'), right, -0.9);
       rotWorld(spine, right, 0.12);
+    } else if (this.isMark) {
+      rotWorld(spine, right, -0.05);
+      rotWorld(spine1, up, 0.12);
     } else {
       rotWorld(spine, right, 0.06);
       rotWorld(spine1, up, 0.12);
@@ -266,8 +393,43 @@ export class Rig {
     this.curl('Left', this.silah === 'tabanca' ? 0.9 : 0.6);
   }
 
+  /** Mark iskeletinde parmak bükme yönünü ölçerek belirle */
+  setupCurl() {
+    this.curlSign = {};
+    for (const side of ['Right', 'Left']) {
+      const m1 = this.B(`${side}HandMiddle1`), m3 = this.B(`${side}HandMiddle3`), th = this.B(`${side}HandThumb1`);
+      if (!m1 || !m3 || !th) continue;
+      const q0 = m1.quaternion.clone();
+      const axis = this.palmAxis(side);
+      const d0 = wpos(m3).distanceTo(wpos(th));
+      rotWorld(m1, axis, 0.6);
+      const d1 = wpos(m3).distanceTo(wpos(th));
+      m1.quaternion.copy(q0);
+      this.root.updateMatrixWorld(true);
+      this.curlSign[side] = d1 < d0 ? 1 : -1;
+    }
+  }
+  palmAxis(side) {
+    const a = wpos(this.B(`${side}HandIndex1`)), b = wpos(this.B(`${side}HandPinky1`));
+    return a.sub(b).normalize();
+  }
+
   curl(side, amount) {
     const B = this.B;
+    if (this.isMark) {
+      const sg = this.curlSign?.[side];
+      if (!sg) return;
+      for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
+        const b = B(`${side}Hand${f}${i}`);
+        if (b) b.quaternion.copy(this.fingerBase[b.uuid]);
+      }
+      this.root.updateMatrixWorld(true);
+      for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
+        const b = B(`${side}Hand${f}${i}`);
+        if (b) rotWorld(b, this.palmAxis(side), sg * amount * (i === 1 ? 0.9 : 1.15));
+      }
+      return;
+    }
     for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
       const b = B(`${side}Hand${f}${i}`);
       if (!b) continue;
