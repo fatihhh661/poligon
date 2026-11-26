@@ -388,7 +388,7 @@ export class PlayMode {
     // kamera
     this.aimT += ((aimNow ? 1 : 0) - this.aimT) * (1 - Math.exp(-dt * 12));
     const eye = this.stance === 'ayakta' ? 1.62 : this.stance === 'diz' ? 1.12 : 0.78;
-    const sh = THREE.MathUtils.lerp(0.55, 0.46, this.aimT);
+    const sh = THREE.MathUtils.lerp(0.48, 0.3, this.aimT);
     const dist = this.stance === 'yuzustu' ? THREE.MathUtils.lerp(2.2, 1.0, this.aimT) : THREE.MathUtils.lerp(2.5, 0.95, this.aimT);
     const cp = Math.cos(this.camPitch), spp = Math.sin(this.camPitch);
     const dirF = V(-Math.sin(this.camYaw) * cp, spp, -Math.cos(this.camYaw) * cp);
@@ -426,6 +426,11 @@ export class PlayMode {
       if (p.t > 0.6) { this.fx.remove(p.s); p.s.material.dispose(); this.puffs.splice(i, 1); }
     }
     this.hitMark = Math.max(0, this.hitMark - dt * 3);
+    // nişangahın gösterdiği yer askerin görüş hattında engelli mi? (her 3 karede bir)
+    if (running && (this._blk = (this._blk || 0) + 1) % 3 === 0) {
+      const h = this.traceShot();
+      this.truePt = h && this.blocked ? h.point.clone().project(this.engine.camera) : null;
+    } else if (!running) this.truePt = null;
     this.drawHud(now);
   }
 
@@ -483,16 +488,7 @@ export class PlayMode {
     const ang = Math.abs(Math.atan2(dir.x, -dir.z)) * 180 / Math.PI;
     if (ang > 90) { this.safetyViol++; this.say('EMNİYET AÇISI İHLALİ  +10 sn', '#ff5252', 2.5); }
     // isabet
-    this.ray.setFromCamera(new THREE.Vector2(0, 0), E.camera);
-    this.ray.far = 400;
-    const objs = [this.ed.root, this.env.floor, ...this.env.group.children.filter((o) => o.name === 'berms' || o.name === 'terrain')].filter(Boolean);
-    const hits = this.ray.intersectObjects(objs, true);
-    let hit = null;
-    for (const h of hits) {
-      if (!visibleChain(h.object) || h.object.isSprite || h.object.isLine2 || h.object.type === 'Line2') continue;
-      hit = h;
-      break;
-    }
+    const hit = this.traceShot();
     if (!hit) { this.misses++; return; }
     let o = hit.object, id = null;
     while (o) { if (o.userData?.itemId) { id = o.userData.itemId; break; } o = o.parent; }
@@ -520,6 +516,45 @@ export class PlayMode {
       this.misses++;
       this.puff(hit.point);
     }
+  }
+
+  sceneObjs() {
+    return (this._objs ||= [this.ed.root, this.env.floor, ...this.env.group.children.filter((o) => o.name === 'berms' || o.name === 'terrain')].filter(Boolean));
+  }
+  firstHit(origin, dir, far) {
+    this.ray.set(origin, dir);
+    this.ray.far = far;
+    for (const h of this.ray.intersectObjects(this.sceneObjs(), true)) {
+      if (!visibleChain(h.object) || h.object.isSprite || h.object.isLine2 || h.object.type === 'Line2') continue;
+      return h;
+    }
+    return null;
+  }
+  /**
+   * Gerçekçi atış: kamera nişangahın gösterdiği noktayı bulur, mermi ise askerin göz/namlu
+   * hattından o noktaya gider. Arada paravan varsa mermi paravana çarpar.
+   */
+  traceShot() {
+    const E = this.engine;
+    this.ray.setFromCamera(new THREE.Vector2(0, 0), E.camera);
+    const camO = this.ray.ray.origin.clone(), camD = this.ray.ray.direction.clone();
+    const ch = this.firstHit(camO, camD, 400);
+    const aimP = ch ? ch.point.clone() : camO.clone().addScaledVector(camD, 400);
+    const eye = this.shotOrigin();
+    const d = aimP.clone().sub(eye);
+    const len = d.length();
+    if (len < 0.05) return ch;
+    d.normalize();
+    const h = this.firstHit(eye, d, len + 0.05);
+    this.blocked = !!(h && h.distance < len - 0.15);
+    return h || ch;
+  }
+  shotOrigin() {
+    const head = this.rig.B?.('Head');
+    const p = head ? head.getWorldPosition(new THREE.Vector3()) : this.pos.clone().add(V(0, 1.6, 0));
+    // nişangah hattı: başın biraz sağı (dipçik sağ omuzda)
+    const rgt = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    return p.addScaledVector(rgt, 0.04).add(V(0, -0.02, 0));
   }
 
   checkDone() {
@@ -611,6 +646,15 @@ export class PlayMode {
       g.fillText('KAYIT ' + fmtT(t).slice(0, 5), W / 2 - 38 * k, 24 * k);
     }
     // nişangah
+    if (this.state === 'run' && this.truePt) {
+      // engel: merminin gerçekte çarpacağı nokta (paravan) kırmızı işaretle gösterilir
+      const bx = (this.truePt.x * 0.5 + 0.5) * W, by = (-this.truePt.y * 0.5 + 0.5) * H;
+      g.strokeStyle = 'rgba(255,70,60,0.95)';
+      g.lineWidth = 2.5 * k;
+      g.beginPath(); g.arc(bx, by, 9 * k, 0, Math.PI * 2); g.moveTo(bx - 6 * k, by - 6 * k); g.lineTo(bx + 6 * k, by + 6 * k); g.stroke();
+      g.fillStyle = 'rgba(255,90,80,0.95)'; g.font = font(700, 14); g.textAlign = 'center';
+      g.fillText('GÖRÜŞ ENGELLİ', W / 2, H / 2 + 22 * k); g.textAlign = 'left';
+    }
     if (this.state === 'run') {
       const cx = W / 2, cy = H / 2;
       const gap = (this.aimT > 0.5 ? 4 : 9 + this.recoil * 10) * k, len = 9 * k;
