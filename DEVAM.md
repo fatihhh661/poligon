@@ -75,17 +75,27 @@ Bu dosya, programı bugüne kadar geliştiren oturumun özetidir. Yeni oturum i�
 - **1. şahıs kamera duvara girmesi**: göz noktası gövde çarpışma yarıçapından öndeydi; `fpCamFrom` göz noktasını da engellere karşı itiyor (`collide(eye, 0.1, false)`).
 - Profil betiği yöntemi: CDP ile `play.tick`, `rig.update`, `traceShot`, `drawHud`, `composer.render` ve geçişler sarmalanıp kare başına ms ölçüldü.
 
+## 4. oturum: asker mekaniği (27.11.2026)
+Kullanıcı fotoğraflarla şikâyet etti: sola eğilince asker hedefi kapatıyor, nişangâh sarı ve kayıyor, yürüyüş ve kollar "berbat". Yapılanlar:
+- **Silah duruşu katmanı** (`soldier.js` → `uprightTorso`, `uprightReference`): bacak/kalça CMU kaydından; gövde, boyun, baş, köprücükler modelin dik T-pozuna göre tutulur (%80, kayıttan %20 canlılık). Öne eğilme hız, depar (`state.sprint`), ivme (`state.accel`) ve çömelik yürümeye göre. CMU Idle kaydı çok kambur olduğu için asker "zombi" gibi duruyordu.
+  - DİKKAT: canlı iskelete `skeleton.pose()` uygulama; bu modelde kök kemik ölçeğini iki kez çarpıp askeri 100 kat küçültüyor. Referans ayrı kopyadan okunur.
+- **Tüfek pozları**: alçak hazır (namlu ileri-aşağı ~20°), yürürken sıkıştırılmış hazır, deparda göğüs önünde çapraz (port arms), dirsekler aşağı ve gövdeye yakın.
+- **Hareket**: atalet (hızlanma ~0,3 sn, depar daha uzun, durma ~0,2 sn); çarpışmada hız gerçek yer değiştirmeye iner (duvara yaslanınca bacaklar koşuda donmuyordu); ayakta yürüyüşte diz bükümü 8,5 → 4 cm.
+- **Çömelerek yürüme**: C ile diz çökünce W ile yürünür; diz pozu ↔ çömelik yürüyüş yumuşak geçiş (`_cw`).
+- **Serbest bakış (Alt)**: yalnızca kamera döner, bırakınca geri gelir; bu sırada nişangâh gizli ve ateş yok.
+- **Sola köşe açma**: 3. şahıs kamera Q ile sol omza geçer (`camFor` içinde `side`).
+- **Nişangâh**: ekran merkezinde sabit ve beyaz. Mermi göz/namlu hattından gider; engel varsa çarpacağı yerde küçük kırmızı daire+X uyarısı.
+- **Tekrar izleme hatası (önceden vardı)**: "Yeniden Başla"dan sonra `_lastSnap` sıfırlanmadığı için kayıt tutulmuyordu. Kayda depar/ivme alanları eklendi (eski kayıtlar da okunur).
+
 ## Sıradaki iş
-1. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
-2. Çevre için kalan iyileştirmeler (kullanıcı isterse):
+1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
+2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
+3. Çevre için kalan iyileştirmeler (kullanıcı isterse):
    - Gerçek TAA (hareket vektörlü) yapılmadı; three.js WebGL hattında büyük iş. Şu an MSAA + SMAA + CAS.
    - Ağaçlar hâlâ kart tabanlı; çok yakından (5 m altı) kart yapısı seçilebilir. Taranmış çam modeli (ör. Poly Haven) indirilirse yakın LOD'da kullanılabilir.
    - Arka set yüzeyi hâlâ biraz düzgün/sarı; doku tabanlı mermi deliği maskesi eklenebilir.
-3. Daha sonra, kullanıcı seçerse:
-   - PUBG kalitesinde hareket: atalet, başlama ve durma geçişleri, çömelerek yürüme, serbest bakış (Alt).
-   - Geri tepme deseni, balistik, zemine göre ayak sesleri.
-   - **Bodycam tarzı** 1. şahıs modu. Kullanıcı fikri beğendi, henüz "ekle" demedi.
-4. Her yeni sürümden sonra exe ve zip'i yeniden paketle.
+4. **Bodycam tarzı** 1. şahıs modu: kullanıcı fikri beğendi, henüz "ekle" demedi. Balistik de bekliyor.
+5. Her yeni sürümden sonra exe ve zip'i yeniden paketle (masaüstündeki `PoligonPro.exe` kopyasını da güncelle).
 
 ## Git
 - Çalışma dalı: `claude/brave-hawking-5z6ze4`.

@@ -19,6 +19,22 @@ function headWeight(m) {
   return (m.userData.headW = si && si.count ? h / si.count : 0);
 }
 
+/** Silah duruşu katmanının yönettiği üst gövde kemikleri (üstten alta hiyerarşi sırası) */
+const UPPER = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'RightShoulder'];
+const uprightCache = new WeakMap();
+function uprightReference(src) {
+  if (uprightCache.has(src)) return uprightCache.get(src);
+  const ref = skClone(src), tmp = new THREE.Group();
+  tmp.add(ref);
+  tmp.updateMatrixWorld(true);
+  const bones = {};
+  ref.traverse((o) => { if (o.isBone) bones[o.name.replace('mixamorig', '')] = o; });
+  const rel = {};
+  for (const n of UPPER) if (bones[n]) rel[n] = bones[n].getWorldQuaternion(new THREE.Quaternion());
+  uprightCache.set(src, rel);
+  return rel;
+}
+
 function pointBone(bone, child, target) {
   bone.updateWorldMatrix(true, true);
   const bp = wpos(bone);
@@ -324,6 +340,10 @@ export class Rig {
     } else clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
     for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);
     if (this.mocap) {
+      // dik duruş referansı: modelin dosyadaki dinlenme (T) pozunda gövde/baş/köprücük kemiklerinin
+      // askere göre yönü. Ayrı bir kopyadan okunur: canlı iskelete skeleton.pose() uygulamak kök
+      // kemiğin ölçeğini iki kez çarpıp askeri 100 kat küçültüyor.
+      this.uprightRel = uprightReference(src);
       this.loco = { phase: 0, idleT: Math.random() * this.actions.Idle.getClip().duration, w: {} };
       for (const [n, a] of Object.entries(this.actions)) { a.play(); a.timeScale = 0; a.setEffectiveWeight(n === 'Idle' ? 1 : 0); this.loco.w[n] = n === 'Idle' ? 1 : 0; }
       this.cur = this.actions.Idle;
@@ -388,7 +408,7 @@ export class Rig {
   /** Hareket karıştırma: hıza ve yöne göre 6 gerçek hareket kaydı, adım fazı senkronlu */
   stepLoco(dt) {
     const s = this.state, L = this.loco, A_ = this.actions;
-    const sp = s.stance === 'ayakta' ? s.locoSpeed || 0 : 0;
+    const sp = s.stance === 'ayakta' || s.stance === 'diz' ? s.locoSpeed || 0 : 0;
     const a = ((s.locoAng || 0) * Math.PI) / 180;
     const locoW = smooth01(sp / 0.45);
     let wF = Math.max(0, Math.cos(a)), wB = Math.max(0, -Math.cos(a)), wL = Math.max(0, Math.sin(a)), wR = Math.max(0, -Math.sin(a));
@@ -485,18 +505,24 @@ export class Rig {
       rotWorld(spine, right, 0.32);
       rotWorld(spine1, right, 0.12);
     } else if (s.stance === 'diz') {
-      root.position.y = -0.46;
+      // diz çökme <-> çömelerek yürüme: hareket edince kalça biraz kalkar, ayaklar yürüyüş kaydının
+      // adımlarını izler (dizler bükük), durunca sağ diz yere iner
+      const moving = this.mocap && (s.locoSpeed || 0) > 0.15;
+      this._cw = dt > 0 ? THREE.MathUtils.lerp(this._cw || 0, moving ? 1 : 0, 1 - Math.exp(-dt * 7)) : (moving ? 1 : 0);
+      const cw = this._cw;
+      const fl0 = wpos(B('LeftFoot')), fr0 = wpos(B('RightFoot'));
+      root.position.y = THREE.MathUtils.lerp(-0.46, -0.33, cw);
       g.updateMatrixWorld(true);
-      twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.12, 0.1, -0.42), L(-0.12, 0.6, -1.5));
-      twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42), L(0.14, -1, -0.4));
-      rotWorld(B('RightFoot'), right, -0.9);
+      twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.12, 0.1, -0.42).lerp(fl0, cw), L(-0.12, 0.6, -1.5).lerp(L(-0.18, 0.4, -1.3), cw));
+      twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42).lerp(fr0, cw), L(0.14, -1, -0.4).lerp(L(0.18, 0.4, -1.3), cw));
+      if (cw < 0.99) rotWorld(B('RightFoot'), right, -0.9 * (1 - cw));
       rotWorld(spine, right, 0.12);
     } else if (this.isMark) {
       // taktik yürüyüş: hareket ederken dizler bükülür (ayaklar yerde kilitli), gövde hafif öne
       const mv = Math.min(1, s.move || 0);
       if (mv > 0.01) {
         const fl = wpos(B('LeftFoot')), fr = wpos(B('RightFoot'));
-        root.position.y = -0.085 * mv;
+        root.position.y = -0.04 * mv; // hafif bükük diz (eskiden 8,5 cm: sürekli çömelik görünüyordu)
         g.updateMatrixWorld(true);
         twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), fl, L(-0.12, 0.45, -1.3));
         twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), fr, L(0.12, 0.45, -1.3));
@@ -516,8 +542,10 @@ export class Rig {
         if (fp.y < gy) { fp.y = gy; twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), f, fp, L(sx * 0.12, 0.5, -1.3)); }
       }
     }
+    // silah duruşu katmanı (ayakta ve çömelerek yürürken)
+    if (this.mocap && (s.stance === 'ayakta' || s.stance === 'diz')) { g.updateMatrixWorld(true); this.uprightTorso(dt); }
     // üst gövde burulması: bakış yönü ile bacak yönü arasındaki fark omurgaya dağıtılır (omuz önce döner)
-    const tw = Math.max(-1.25, Math.min(1.25, s.twist || 0));
+    const tw =Math.max(-1.25, Math.min(1.25, s.twist || 0));
     if (Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') {
       rotWorld(spine, up, tw * 0.22);
       rotWorld(spine1, up, tw * 0.3);
@@ -572,9 +600,13 @@ export class Rig {
       o.position.copy(p);
     } else {
       // hazır: duruyorken alçak hazır, yürürken sıkıştırılmış hazır (dipçik omuzda, namlu hafif aşağı)
-      const rxLow = pitch - lr(0.62, 0.28, mv), ryLow = lr(0.45, 0.1, mv);
-      o.rotation.set(lr(rxLow, pitch * (1 - renv), abW) + rec * 0.11, lr(ryLow, 0, abW), 0);
-      const bLow = V(sL.x - 0.02, hL.y - 0.32, sL.z - 0.12).lerp(V(sL.x - 0.06, hL.y - 0.2, sL.z - 0.07), mv);
+      // dururken alçak hazır (namlu ileri-aşağı ~20°, hafif içe), yürürken sıkıştırılmış hazır,
+      // koşarken göğüs önünde çapraz (namlu sol yukarı), nişanda omuzda
+      const spr = (s.sprint || 0) * (1 - abW) * (1 - renv);
+      const rxLow = pitch * 0.35 - lr(0.38, 0.2, mv), ryLow = lr(0.22, 0.08, mv);
+      o.rotation.set(lr(lr(rxLow, 0.62, spr), pitch * (1 - renv), abW) + rec * 0.11, lr(lr(ryLow, 0.72, spr), 0, abW), 0);
+      const bLow = V(sL.x - 0.04, hL.y - 0.36, sL.z - 0.1).lerp(V(sL.x - 0.06, hL.y - 0.24, sL.z - 0.07), mv);
+      bLow.lerp(V(sL.x - 0.02, hL.y - 0.58, sL.z - 0.16), spr);
       const bAim = V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06);
       const butt = bLow.lerp(bAim, abW);
       if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, Math.max(0.3, hL.y - 0.1), sL.z - 0.08);
@@ -636,8 +668,9 @@ export class Rig {
     let poleR, poleL;
     if (s.stance === 'yuzustu') { poleR = L(sL.x + 0.35, -0.8, sL.z - 0.1); poleL = L(sLl.x - 0.3, -0.8, sLl.z - 0.25); }
     else {
-      poleR = L(sL.x + 0.6, sL.y - 0.5, sL.z + 0.1);
-      poleL = this.silah === 'tabanca' ? L(sLl.x - 0.6, sLl.y - 0.5, sLl.z) : L(sLl.x - 0.1, sLl.y - 0.9, sLl.z - 0.2);
+      // dirsekler: hazırda aşağı ve gövdeye yakın, nişanda sağ dirsek yana açılır
+      poleR = L(sL.x + 0.3, sL.y - 0.8, sL.z + 0.3).lerp(L(sL.x + 0.6, sL.y - 0.5, sL.z + 0.1), ab);
+      poleL = this.silah === 'tabanca' ? L(sLl.x - 0.6, sLl.y - 0.5, sLl.z) : L(sLl.x - 0.22, sLl.y - 0.9, sLl.z - 0.1);
       if (renv > 0) poleL = L(sLl.x - 0.5, sLl.y - 0.6, sLl.z + 0.1);
     }
     if (this.silah !== 'tabanca' && ab > 0.5 && renv < 0.3) {
@@ -654,6 +687,44 @@ export class Rig {
     this.curl('Right', 0.9);
     this.curl('Left', renv > 0.3 ? 0.75 : this.silah === 'tabanca' ? 0.9 : 0.6);
     this.simJiggle(dt);
+  }
+
+  /**
+   * Silah duruşu katmanı (oyunlardaki üst gövde katmanı gibi): bacaklar ve kalça gerçek hareket
+   * kaydından gelir; gövde, boyun, baş ve köprücükler ise dik "tüfekli asker" duruşuna çekilir.
+   * Hareket kayıtlarındaki kamburluk ve omuz silkmesi böylece görünmez, kayıttan %20 canlılık kalır.
+   * Öne eğilme: durunca hafif, yürürken biraz, koşarken ve hızlanırken daha fazla; çömelerek
+   * yürürken belirgin. Baş her zaman ufka bakar (nişan eğimi sonradan eklenir).
+   */
+  uprightTorso(dt) {
+    const s = this.state, B = this.B, R = this.uprightRel;
+    if (!R) return;
+    const sp = Math.min(1, (s.locoSpeed || 0) / 1.6);
+    const cw = this._cw || 0;
+    const lean = 0.05 + 0.06 * sp + 0.16 * (s.sprint || 0) + (s.accel || 0) + 0.22 * cw;
+    const gq = this.group.getWorldQuaternion(new THREE.Quaternion());
+    const ax = V(1, 0, 0);
+    const tilt = (a) => new THREE.Quaternion().setFromAxisAngle(ax, -a);
+    // adım ritmi: omuzlar kalçaya ters yönde çok az döner, gövde iniş anında hafif çöker
+    const ph = (this.loco?.phase || 0) * Math.PI * 2, mvw = Math.min(1, (s.locoSpeed || 0) / 1.2);
+    const plan = {
+      Spine: [lean * 0.35, 0.8], Spine1: [lean * 0.7, 0.8], Spine2: [lean, 0.8],
+      Neck: [lean * 0.4, 0.85], Head: [0, 0.85], LeftShoulder: [lean, 0.7], RightShoulder: [lean, 0.7],
+    };
+    const pw = new THREE.Quaternion(), cur = new THREE.Quaternion(), tgt = new THREE.Quaternion();
+    for (const n of UPPER) {
+      const b = B(n), rel = R[n];
+      if (!b || !rel) continue;
+      const [a, w] = plan[n];
+      b.parent.getWorldQuaternion(pw);
+      cur.copy(pw).multiply(b.quaternion);
+      tgt.copy(gq).multiply(tilt(a));
+      if (n === 'Spine2') tgt.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), -Math.sin(ph) * 0.05 * mvw));
+      tgt.multiply(rel);
+      cur.slerp(tgt, w);
+      b.quaternion.copy(pw.invert().multiply(cur));
+      b.updateMatrixWorld(true);
+    }
   }
 
   /** Yelek cepleri ve askılar: yay-sönüm simülasyonu (adımlarla sallanır, yerçekimiyle sarkar) */

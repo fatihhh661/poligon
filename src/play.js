@@ -8,6 +8,7 @@ import { clamp, esc } from './util.js';
 import { icon, hydrateIcons } from './icons.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const smooth01 = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
 const STANCES = ['ayakta', 'diz', 'alcak', 'yuzustu'];
 const CAM_ADI = { fps: '1. ŞAHIS', sinematik: 'SİNEMATİK', takip: 'OMUZ KAMERASI', drone: 'DRONE', hedef: 'HEDEF ARKASI', yan: 'YAN AÇI', yakin: 'YAKIN PLAN', arka: 'ARKADAN GENİŞ' };
 const EYE_H = { ayakta: 1.6, diz: 1.1, alcak: 0.95, yuzustu: 0.5 };
@@ -180,6 +181,7 @@ export class PlayMode {
     this.boltLocked = false;
     this.shake = 0;
     this.recData = { snaps: [], events: [], silah: this.silah };
+    this._lastSnap = -1; // yeniden başlatınca önceki koşunun zamanı kalırsa tekrar izleme kaydı tutulmuyordu
     this.clearDebris?.();
     // hedef durumları
     this.targets = new Map();
@@ -256,7 +258,7 @@ export class PlayMode {
         if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
         const k = e.key.toLowerCase();
         this.keys[k] = true;
-        if (['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+        if (['w', 'a', 's', 'd', ' ', 'shift', 'alt', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
         if (this.state === 'intro' && k === 'enter') { this.start(false); return; }
         if (this.state === 'finished' && k === 'enter') { this.restart(); return; }
         if (k === 'v') this.toggleView();
@@ -273,10 +275,16 @@ export class PlayMode {
         if (k === 'enter' && this.state === 'run') this.finish(false);
         e.stopPropagation();
       },
-      ku: (e) => { this.keys[e.key.toLowerCase()] = false; },
+      ku: (e) => { this.keys[e.key.toLowerCase()] = false; if (e.key === 'Alt') e.preventDefault(); },
       mm: (e) => {
         if (document.pointerLockElement !== c) return;
         const s = this.aimT > 0.5 ? 0.0011 : 0.0022;
+        // serbest bakış (Alt): yalnızca kamera döner, asker ve tüfek yönünü korur
+        if (this.keys.alt && this.aimT < 0.3) {
+          this.freeYaw = clamp((this.freeYaw || 0) - e.movementX * s, -2.4, 2.4);
+          this.freePitch = clamp((this.freePitch || 0) - e.movementY * s, -0.6 - this.camPitch, 0.5 - this.camPitch);
+          return;
+        }
         this.camYaw -= e.movementX * s;
         this.camPitch = clamp(this.camPitch - e.movementY * s, -0.75, 0.6);
       },
@@ -395,7 +403,8 @@ export class PlayMode {
     if (running) this.elapsed += dt;
     // hareket
     let f = 0, s = 0;
-    if (running && this.stance === 'ayakta') {
+    if (running && (this.stance === 'ayakta' || this.stance === 'diz')) {
+      // ayakta ve çömelerek (C) yürünebilir
       f = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0);
       s = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0);
     } else if (running && this.stance === 'yuzustu') {
@@ -403,14 +412,30 @@ export class PlayMode {
       f = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0);
     }
     const aimNow = this.aiming && running && !(this.stance === 'yuzustu' && f !== 0) && this.reloadU < 0;
-    const sp = this.stance === 'yuzustu' ? 0.55 : aimNow ? 1.0 : k.shift && f > 0 && s === 0 ? 4.2 : k.shift && f > 0 ? 3.0 : f < 0 ? 1.15 : f === 0 && s !== 0 ? 1.3 : 1.6;
+    const crouchMv = this.stance === 'diz';
+    const sp = this.stance === 'yuzustu' ? 0.55 : crouchMv ? (aimNow ? 0.8 : f > 0 && s === 0 ? 1.2 : 0.95)
+      : aimNow ? 1.0 : k.shift && f > 0 && s === 0 ? 4.2 : k.shift && f > 0 ? 3.0 : f < 0 ? 1.15 : f === 0 && s !== 0 ? 1.3 : 1.6;
     const fwd = V(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const rgt = V(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     const want = fwd.clone().multiplyScalar(f).addScaledVector(rgt, s);
     if (want.lengthSq() > 0) want.normalize().multiplyScalar(sp);
-    this.vel.lerp(want, 1 - Math.exp(-dt * 10));
+    // atalet: hızlanma ~0,3 sn (deparda daha uzun), durma ~0,2 sn; yön değiştirme ikisinin arası
+    const speeding = want.lengthSq() > this.vel.lengthSq() + 1e-4;
+    const accRate = !speeding ? 9 : want.length() > 3 ? 3.2 : 6;
+    const fwd0 = this.vel.dot(fwd);
+    this.vel.lerp(want, 1 - Math.exp(-dt * accRate));
+    // ileri ivme → gövde eğilmesi (hızlanırken öne, ani duruşta hafif geriye)
+    const acc = (this.vel.dot(fwd) - fwd0) / Math.max(dt, 1e-3);
+    this.accLean = (this.accLean || 0) + (clamp(acc * 0.014, -0.07, 0.09) - (this.accLean || 0)) * (1 - Math.exp(-dt * 8));
     const np = this.pos.clone().addScaledVector(this.vel, dt);
     this.collide(np);
+    // engele çarpınca hız gerçek yer değiştirmeye iner (duvara yaslanınca bacaklar koşuda donmaz,
+    // duvar boyunca kayarken adımlar kayma yönüne uyar)
+    if (dt > 0) {
+      const actual = np.clone().sub(this.pos).divideScalar(dt);
+      actual.y = 0;
+      if (actual.lengthSq() < this.vel.lengthSq() - 1e-4) this.vel.copy(actual);
+    }
     this.pos.copy(np);
     const speed = this.vel.length();
     // karakter yönü
@@ -461,8 +486,13 @@ export class PlayMode {
     const crawling = this.stance === 'yuzustu' && this.vel.length() > 0.1;
     st.crawl = THREE.MathUtils.lerp(st.crawl || 0, crawling ? 1 : 0, 1 - Math.exp(-dt * 8));
     if (crawling) st.crawlPh = (st.crawlPh || 0) + dt * 5.5 * Math.sign(this.vel.dot(fwd) || 1);
-    st.aim = (aimNow || now - this.lastShot < 0.7 || this.stance !== 'ayakta' || (this.view === 'fps' && speed < 2.6)) && this.reloadU < 0;
-    st.move = this.stance === 'ayakta' ? Math.min(1, speed / 1.6) : 0;
+    // diz çökmüşken nişan duruşu; çömelerek yürürken tüfek hazırda (nişan alınmadıkça)
+    const kneelAim = this.stance !== 'ayakta' && !(this.stance === 'diz' && speed > 0.3);
+    st.aim = (aimNow || now - this.lastShot < 0.7 || kneelAim || (this.view === 'fps' && speed < 2.6)) && this.reloadU < 0;
+    st.move = this.stance === 'ayakta' || this.stance === 'diz' ? Math.min(1, speed / 1.6) : 0;
+    // depar ağırlığı (tüfek göğüs önünde çapraz) ve ivme eğilmesi, silah duruşu katmanı için
+    st.sprint = THREE.MathUtils.lerp(st.sprint || 0, sprinting && !aimNow ? 1 : 0, 1 - Math.exp(-dt * 7));
+    st.accel = this.accLean || 0;
     st.ready = this.view === 'fps' ? 1 : 0; // 1. şahısta tüfek görüş alanında (sıkıştırılmış hazır)
     st.reload = this.reloadU;
     st.reloadEmpty = this.reloadEmpty;
@@ -479,12 +509,20 @@ export class PlayMode {
     this.rig.update(dt);
     if (running && this.elapsed - (this._lastSnap ?? -1) >= 1 / 60) {
       this._lastSnap = this.elapsed;
-      this.recData.snaps.push([this.elapsed, this.pos.x, this.pos.z, this.yaw, this.camYaw, this.camPitch, STANCES.indexOf(this.stance), this.aimT, st.aim ? 1 : 0, st.pitch, this.leanT, st.crawl || 0, st.crawlPh || 0, mvs, this.recoil, this.reloadU, this.reloadEmpty ? 1 : 0, this.boltLocked ? 1 : 0, st.move, this.lowYaw, st.twist || 0, st.locoSpeed || 0, st.locoAng || 0, this.exert, this.turnVel]);
+      this.recData.snaps.push([this.elapsed, this.pos.x, this.pos.z, this.yaw, this.camYaw, this.camPitch, STANCES.indexOf(this.stance), this.aimT, st.aim ? 1 : 0, st.pitch, this.leanT, st.crawl || 0, st.crawlPh || 0, mvs, this.recoil, this.reloadU, this.reloadEmpty ? 1 : 0, this.boltLocked ? 1 : 0, st.move, this.lowYaw, st.twist || 0, st.locoSpeed || 0, st.locoAng || 0, this.exert, this.turnVel, st.sprint || 0, st.accel || 0]);
     }
 
     // kamera
     this.aimT += ((aimNow ? 1 : 0) - this.aimT) * (1 - Math.exp(-dt * 12));
-    const cam = this.view === 'fps' ? this.fpCam(dt) : this.collideCam(this.camFor(this.pos, this.camYaw, this.camPitch, this.aimT, this.stance, this.leanT));
+    // serbest bakış bırakılınca kamera yumuşakça asker bakışına döner
+    if (!k.alt || aimNow) {
+      const kb = 1 - Math.exp(-dt * 9);
+      this.freeYaw = (this.freeYaw || 0) * (1 - kb);
+      this.freePitch = (this.freePitch || 0) * (1 - kb);
+    }
+    const fy = this.freeYaw || 0, fp = this.freePitch || 0;
+    const cam = this.view === 'fps' ? this.fpCamFrom(this.camYaw + fy, this.camPitch + fp, this.aimT, this.leanT, dt, this.yaw)
+      : this.collideCam(this.camFor(this.pos, this.camYaw + fy, this.camPitch + fp, this.aimT, this.stance, this.leanT));
     this.shake = Math.max(0, this.shake - dt * 7);
     if (this.shake > 0) { cam.p.x += (Math.random() - 0.5) * 0.022 * this.shake; cam.p.y += (Math.random() - 0.5) * 0.022 * this.shake; }
     if (this.state === 'intro' || this.view === 'fps') E.camera.position.copy(cam.p);
@@ -579,7 +617,9 @@ export class PlayMode {
     const dist = stance === 'yuzustu' ? THREE.MathUtils.lerp(2.2, 1.0, aimT) : THREE.MathUtils.lerp(2.5, 0.95, aimT);
     const c = Math.cos(cp), sp = Math.sin(cp);
     const dirF = V(-Math.sin(cy) * c, sp, -Math.cos(cy) * c);
-    const pivot = pos.clone().add(V(0, eye - Math.abs(lean) * 0.05, 0)).addScaledVector(rgt, sh + lean * 0.38);
+    // omuz değişimi: sola köşe açınca (Q) kamera sol omza geçer, asker hedefi kapatmaz
+    const side = 1 - 2 * smooth01((-lean - 0.05) / 0.45);
+    const pivot = pos.clone().add(V(0, eye - Math.abs(lean) * 0.05, 0)).addScaledVector(rgt, sh * side + lean * 0.2);
     const p = pivot.clone().addScaledVector(dirF, -dist);
     p.y = Math.max(0.25, p.y);
     return { p, look: pivot.clone().addScaledVector(dirF, 20), pivot, fov: THREE.MathUtils.lerp(52, 30, aimT), roll: -lean * 0.09 };
@@ -954,7 +994,7 @@ export class PlayMode {
       x: L(1), z: L(2), yaw: angLerp(a[3], b[3], f), cy: angLerp(a[4], b[4], f), cp: L(5), st: STANCES[a[6]] || 'ayakta',
       aimT: L(7), aim: a[8] > 0.5, pitch: L(9), lean: L(10), cr: L(11), ph: L(12), mvs: L(13), rec: L(14),
       rl: a[15] >= 0 && b[15] >= 0 ? L(15) : a[15], re: a[16] > 0.5, bl: a[17] > 0.5, mv: L(18),
-      lowYaw: a.length > 19 ? angLerp(a[19], b[19], f) : null, tw: a.length > 19 ? L(20) : 0, ls: a.length > 19 ? L(21) : Math.abs(L(13)), la: a.length > 19 ? a[22] : 0, ex: a.length > 19 ? L(23) : 0, tv: a.length > 19 ? L(24) : 0,
+      lowYaw: a.length > 19 ? angLerp(a[19], b[19], f) : null, tw: a.length > 19 ? L(20) : 0, ls: a.length > 19 ? L(21) : Math.abs(L(13)), la: a.length > 19 ? a[22] : 0, ex: a.length > 19 ? L(23) : 0, tv: a.length > 19 ? L(24) : 0, spr: a.length > 25 ? L(25) : 0, acc: a.length > 26 ? L(26) : 0,
     };
   }
 
@@ -978,7 +1018,7 @@ export class PlayMode {
     r.group.position.set(s.x, 0, s.z);
     r.group.rotation.y = r.mocap && s.lowYaw != null ? s.lowYaw : s.yaw;
     r.setMove(s.mvs);
-    Object.assign(st, { locoSpeed: s.ls, locoAng: s.la, twist: r.mocap ? s.tw : 0, exert: s.ex, turnVel: s.tv, groundY: 0.015 });
+    Object.assign(st, { locoSpeed: s.ls, locoAng: s.la, twist: r.mocap ? s.tw : 0, exert: s.ex, turnVel: s.tv, sprint: s.spr, accel: s.acc, groundY: 0.015 });
     r.update(Math.max(0.0001, dt * sp));
     this.replayCamera(s, dt);
     this.visualFx(dt * Math.max(sp, 0.0001), now);
@@ -1179,6 +1219,7 @@ export class PlayMode {
       return;
     }
     if (now - this.lastShot < (this.silah === 'tabanca' ? 0.18 : 0.32)) return;
+    if (Math.abs(this.freeYaw || 0) > 0.05 || Math.abs(this.freePitch || 0) > 0.05) return; // serbest bakışta ateş yok
     this.lastShot = now;
     this.shots++;
     this.mag--;
@@ -1415,17 +1456,26 @@ export class PlayMode {
     // nişangah
     const adsFps = this.view === 'fps' && this.aimT > 0.55 && this.silah !== 'tabanca';
     if (adsFps && this.state === 'run') this.drawRedDot(g, W, H, k, Math.min(1, (this.aimT - 0.55) / 0.3));
-    if (this.state === 'run' && !adsFps) {
+    if (this.state === 'run' && !adsFps && Math.abs(this.freeYaw || 0) < 0.05) {
+      // nişangah ekran merkezinde sabit ve beyaz (kaymaz). Mermi askerin göz/namlu hattından gider:
+      // arada engel varsa merminin çarpacağı yerde ayrı küçük bir uyarı işareti çıkar.
+      const cx = W / 2, cy = H / 2;
       const xh = this.xh || { x: 0, y: 0 };
-      const cx = (xh.x * 0.5 + 0.5) * W, cy = (-xh.y * 0.5 + 0.5) * H;
-      const off = Math.hypot(cx - W / 2, cy - H / 2) > 6 * k;
-      // ekran merkezi ile gerçek isabet noktası ayrıysa merkezde soluk bir halka (nişan yönü)
-      if (off) { g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1.5 * k; g.beginPath(); g.arc(W / 2, H / 2, 4 * k, 0, Math.PI * 2); g.stroke(); }
-      const gap = (this.aimT > 0.5 ? 4 : 9 + this.recoil * 10) * k, len = 9 * k;
-      g.strokeStyle = this.blocked ? 'rgba(255,190,90,0.95)' : 'rgba(255,255,255,0.9)';
-      g.lineWidth = 2 * k;
+      const bx = (xh.x * 0.5 + 0.5) * W, by = (-xh.y * 0.5 + 0.5) * H;
       g.shadowColor = 'rgba(0,0,0,0.8)';
       g.shadowBlur = 3 * k;
+      if (this.blocked && Math.hypot(bx - cx, by - cy) > 5 * k) {
+        const r = 6 * k;
+        g.strokeStyle = 'rgba(255,92,72,0.95)';
+        g.lineWidth = 2 * k;
+        g.beginPath(); g.arc(bx, by, r, 0, Math.PI * 2);
+        g.moveTo(bx - r * 0.6, by - r * 0.6); g.lineTo(bx + r * 0.6, by + r * 0.6);
+        g.moveTo(bx + r * 0.6, by - r * 0.6); g.lineTo(bx - r * 0.6, by + r * 0.6);
+        g.stroke();
+      }
+      const gap = (this.aimT > 0.5 ? 4 : 9 + this.recoil * 10) * k, len = 9 * k;
+      g.strokeStyle = 'rgba(255,255,255,0.92)';
+      g.lineWidth = 2 * k;
       g.beginPath();
       g.moveTo(cx - gap - len, cy); g.lineTo(cx - gap, cy);
       g.moveTo(cx + gap, cy); g.lineTo(cx + gap + len, cy);
@@ -1467,7 +1517,7 @@ export class PlayMode {
     // alt bilgi
     g.fillStyle = 'rgba(255,255,255,0.6)';
     g.font = font(600, 13);
-    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · V: 1./3. şahıs · Q/E: köşe aç · C: diz · X: alçak çöküş · Z: yüzüstü (W/S ile sürün) · R: şarjör · K: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
+    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · V: 1./3. şahıs · Q/E: köşe aç · Alt: serbest bakış · C: diz (W ile çömelerek yürü) ·X: alçak çöküş · Z: yüzüstü (W/S ile sürün) · R: şarjör · K: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
     g.textAlign = 'right';
     g.fillStyle = 'rgba(243,239,228,0.55)';
     g.font = font(700, 15);
