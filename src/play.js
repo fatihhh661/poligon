@@ -420,7 +420,7 @@ export class PlayMode {
   }
 
   collide(p) {
-    const R = 0.3;
+    const R = 0.24;
     for (const c of this.colliders) {
       const co = Math.cos(c.rot), si = Math.sin(c.rot);
       const dx = p.x - c.x, dz = p.z - c.z;
