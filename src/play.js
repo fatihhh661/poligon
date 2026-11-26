@@ -535,8 +535,7 @@ export class PlayMode {
     }
   }
 
-  collide(p) {
-    const R = 0.24;
+  collide(p, R = 0.24, bounds = true) {
     for (const c of this.colliders) {
       const co = Math.cos(c.rot), si = Math.sin(c.rot);
       const dx = p.x - c.x, dz = p.z - c.z;
@@ -554,6 +553,7 @@ export class PlayMode {
       p.x = c.x + lx * co + lz * si;
       p.z = c.z - lx * si + lz * co;
     }
+    if (!bounds) return;
     const { w, d } = this.ed.state.poligon;
     p.x = clamp(p.x, -w / 2 + 0.35, w / 2 - 0.35);
     p.z = clamp(p.z, -d + 1.2, 13);
@@ -595,6 +595,8 @@ export class PlayMode {
     const fh = V(-Math.sin(yaw), 0, -Math.cos(yaw));
     const hp = head ? head.getWorldPosition(V()) : r.group.position.clone().add(V(0, 1.6, 0));
     const eye = hp.add(V(0, 0.095, 0)).addScaledVector(fh, 0.17); // yaka ve askıların önünde
+    // göz noktası gövdenin çarpışma yarıçapından öndedir: duvara yaslanınca/koşarken paravanın içine girmesin
+    if (this.colliders) this.collide(eye, 0.1, false);
     this._fpEye = this._fpEye && dt > 0 ? this._fpEye.lerp(eye, 1 - Math.exp(-dt * 18)) : eye.clone();
     const p = this._fpEye.clone(), dir = f.clone();
     const si = r.sightInfo?.();
@@ -1236,8 +1238,38 @@ export class PlayMode {
     for (const o of [this.env.floor, ...this.env.group.children.filter((c) => c.name === 'berms' || c.name === 'terrain')]) {
       if (o?.geometry && !o.geometry.boundsTree) o.geometry.computeBoundsTree();
     }
-    this.ed.root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.geometry && !o.geometry.boundsTree && o.geometry.attributes.position?.count > 300) o.geometry.computeBoundsTree(); });
+    this.ed.root.updateMatrixWorld(true);
+    const skinned = [];
+    this.ed.root.traverse((o) => {
+      if (o.isSkinnedMesh) { skinned.push(o); return; }
+      if (o.isMesh && !o.isInstancedMesh && !o.userData.rayProxy && o.geometry && !o.geometry.boundsTree && o.geometry.attributes.position?.count > 300) o.geometry.computeBoundsTree();
+    });
+    for (const m of skinned) this.bakeRayProxy(m);
     console.info('BVH', Math.round(performance.now() - t0), 'ms');
+  }
+
+  /**
+   * İskeletli (skinned) modeller three.js'te hızlandırılmış ışın testini kullanamaz: her köşe
+   * kemiklere göre tek tek dönüştürülür (87 bin köşeli asker figürü ışın başına ~25 ms, kare
+   * hızını yarıya düşürüyordu). Parkurdaki figürler sabit pozda durduğu için o anki poz görünmez,
+   * BVH'li bir "ışın gövdesine" pişirilir; isabet, engel ve kamera çarpışması aynı yere denk gelir.
+   */
+  bakeRayProxy(m) {
+    if (m.userData.rayProxy) return;
+    const src = m.geometry, n = src.attributes.position.count;
+    const arr = new Float32Array(n * 3), v = new THREE.Vector3();
+    for (let i = 0; i < n; i++) { m.getVertexPosition(i, v); arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    if (src.index) g.setIndex(src.index);
+    g.computeBoundingSphere();
+    g.computeBoundsTree();
+    const proxy = new THREE.Mesh(g, RAY_PROXY_MAT);
+    proxy.userData.rayProxy = true;
+    proxy.castShadow = proxy.receiveShadow = false;
+    m.add(proxy); // modelin yerel uzayında: aynı dönüşüm
+    m.userData.rayProxy = proxy;
+    m.raycast = () => {}; // pahalı iskeletli test yerine gövde kullanılır
   }
 
   firstHit(origin, dir, far) {
@@ -1678,6 +1710,9 @@ export class PlayMode {
     o.stop(t + 0.3);
   }
 }
+
+// ışın gövdeleri çizilmez (material.visible=false), yalnızca ışın testine girer
+const RAY_PROXY_MAT = new THREE.MeshBasicMaterial({ visible: false });
 
 function visibleChain(o) {
   while (o) { if (!o.visible) return false; o = o.parent; }

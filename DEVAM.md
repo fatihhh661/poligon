@@ -69,8 +69,14 @@ Bu dosya, programı bugüne kadar geliştiren oturumun özetidir. Yeni oturum i�
 - **Görüntü filtresi** (`engine.js`): SMAA (Ultra hariç) + AMD CAS tarzı uyarlamalı keskinleştirme (renk derecelendirme geçişinde).
 - **Performans** (RTX 3060, 1920x994, Yüksek): düzenleyici ~87 FPS (önce ~73). Oynama Modu ~27 FPS — **orijinal kodda da aynı**, bitki örtüsünden bağımsız (gizleyince değişmiyor); darboğaz `play.js` tarafında, CPU.
 
+## 3. oturumda çözülenler (27.11.2026)
+- **Oynama Modu 30 → 72 FPS** (Yüksek, 1920x994, RTX 3060). Profil: kare başına 33 ms'nin 27 ms'i `traceShot` içindeydi. Sebep: parkurdaki asker figürü (iskeletli, 87 bin köşe); three.js iskeletli modelde BVH kullanmaz, her köşeyi kemikle dönüştürür. Çözüm `play.bakeRayProxy`: oyuna girerken figürün sabit pozu görünmez, BVH'li bir ışın gövdesine pişirilir; iskeletli modelin `raycast`'i kapatılır. Şimdi `traceShot` 0,3 ms, oyun mantığı toplam ~1,7 ms.
+- **1. şahısta koşarken ekrana giren parça**: baş kemiğine %100 bağlı kulaklık/mikrofon parçası (`RetopoFlow_015001`, malzeme adı "Mark_Pouches") isim kuralına takılmadığı için gizlenmiyordu. `setFirstPerson` artık köşe ağırlığının >%60'ı baş kemiğinde olan her parçayı da gizliyor (`headWeight`).
+- **1. şahıs kamera duvara girmesi**: göz noktası gövde çarpışma yarıçapından öndeydi; `fpCamFrom` göz noktasını da engellere karşı itiyor (`collide(eye, 0.1, false)`).
+- Profil betiği yöntemi: CDP ile `play.tick`, `rig.update`, `traceShot`, `drawHud`, `composer.render` ve geçişler sarmalanıp kare başına ms ölçüldü.
+
 ## Sıradaki iş
-1. **Oynama Modu performansı**: Yüksek kalitede ~27 FPS (düzenleyici 87). Bitki örtüsü değil; `play.js` döngüsü profillenmeli (ışın atışları, BVH, mocap, HUD tuvali, 3. şahıs kamera çarpışması vb.).
+1. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
 2. Çevre için kalan iyileştirmeler (kullanıcı isterse):
    - Gerçek TAA (hareket vektörlü) yapılmadı; three.js WebGL hattında büyük iş. Şu an MSAA + SMAA + CAS.
    - Ağaçlar hâlâ kart tabanlı; çok yakından (5 m altı) kart yapısı seçilebilir. Taranmış çam modeli (ör. Poly Haven) indirilirse yakın LOD'da kullanılabilir.

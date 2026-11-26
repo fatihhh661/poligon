@@ -8,6 +8,17 @@ const wpos = (o) => o.getWorldPosition(new THREE.Vector3());
 const smooth01 = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
 
 /** Kemiği, çocuğu hedef noktaya bakacak şekilde (dünya uzayında) döndür */
+/** İskeletli bir parçanın köşe ağırlığının ne kadarı baş kemiğinde (0..1). Bir kez hesaplanır. */
+function headWeight(m) {
+  if (!m.isSkinnedMesh || !m.skeleton) return 0;
+  if (m.userData.headW !== undefined) return m.userData.headW;
+  const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+  const isHead = m.skeleton.bones.map((b) => /head$/i.test(b.name));
+  let h = 0;
+  if (si && sw) for (let i = 0; i < si.count; i++) for (let j = 0; j < 4; j++) if (isHead[si.getComponent(i, j)]) h += sw.getComponent(i, j);
+  return (m.userData.headW = si && si.count ? h / si.count : 0);
+}
+
 function pointBone(bone, child, target) {
   bone.updateWorldMatrix(true, true);
   const bp = wpos(bone);
@@ -726,11 +737,19 @@ export class Rig {
     W.bolt.position.copy(W.boltRest).addScaledVector(W.boltDir, locked ? 1 : cyc);
   }
 
-  /** 1. şahısta baş/kask/gözlük gizlenir (kamera içinden geçmesin), gövde görünür kalır */
+  /**
+   * 1. şahısta baş/kask/gözlük ve başa bağlı tüm aksesuarlar gizlenir (kamera içinden geçmesin),
+   * gövde görünür kalır. İsim tek başına yetmez: kulaklık mikrofon kolu gibi parçaların adı
+   * "Pouches" olabiliyor; koşuda baş sallanınca göz hizasında ekrana giriyordu. Bu yüzden
+   * köşe ağırlığının çoğu baş kemiğinde olan her parça da gizlenir.
+   */
   setFirstPerson(on) {
     if (this._fp === on || !this.root) return;
     this._fp = on;
-    this.root.traverse((o) => { if (o.isMesh && /Head|Helmet|Eye|Glus|visor/i.test((o.material?.name || '') + o.name)) o.visible = !on; });
+    this.root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (/Head|Helmet|Eye|Glus|visor/i.test((o.material?.name || '') + o.name) || headWeight(o) > 0.6) o.visible = !on;
+    });
   }
 
   /** Nişan anında 3D nişangah gövdesi gizlenir (görüntü ekranda çizilir) */
