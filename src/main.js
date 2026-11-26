@@ -4,6 +4,7 @@ import { Environment } from './environment.js';
 import { getTextures } from './textures.js';
 import { loadAssets } from './assets.js';
 import { PlayMode } from './play.js';
+import { THUMB_FILES } from './thumbsList.js';
 import { initMaterials, CATALOG, isPoint, isTarget } from './objects.js';
 import { Editor, emptyState } from './editor.js';
 import { renderThumbs } from './thumbs.js';
@@ -114,13 +115,18 @@ async function boot() {
   ed.load({ ...emptyState(), items: baseLineState() });
 
   progress(0.7, 'Eleman kütüphanesi hazırlanıyor');
-  thumbs = await renderThumbs((p) => progress(0.7 + p * 0.22));
+  // önceden üretilmiş önizlemeler (scripts/make-thumbs.cjs); eksik olanlar çizilir
+  const missing = Object.keys(CATALOG).filter((t) => !THUMB_FILES.includes(t));
+  for (const t of THUMB_FILES) thumbs[t] = `assets/thumbs/${t}.png`;
+  if (missing.length) Object.assign(thumbs, await renderThumbs((p) => progress(0.7 + p * 0.22), missing));
+  progress(0.92);
+  window.__thumbs = thumbs;
   buildLibrary(thumbs);
 
   progress(0.95, 'Gölgelendiriciler derleniyor');
   setupSplashCamera();
   engine.start();
-  engine.renderer.compile(engine.scene, engine.camera);
+  try { await engine.renderer.compileAsync(engine.scene, engine.camera); } catch (e) { engine.renderer.compile(engine.scene, engine.camera); }
   await nextFrame();
   await nextFrame();
   progress(1, 'Hazır');
@@ -135,6 +141,9 @@ async function boot() {
   await revealScene();
   showMenu(true);
   window.native?.booted?.();
+  const gpu = engine.gpuName();
+  if (/Intel|UHD|Iris|Radeon\(TM\) Graphics|Microsoft Basic|SwiftShader/i.test(gpu) && !/NVIDIA|RTX|GTX/i.test(gpu))
+    setTimeout(() => modal({ title: 'Ekran kartı uyarısı', ikon: 'alert', width: 600, body: `<div class="about"><p>Program şu an <b>${esc(gpu)}</b> ile çalışıyor. Bu, işlemcinin içindeki zayıf grafik çipi; yüksek grafiklerde kasmanın sebebi budur.</p><p>NVIDIA kartını kullanmak için: <b>Windows Ayarlar → Sistem → Ekran → Grafik</b> → listeden <b>PoligonPro</b>'yu seçin (yoksa <b>Gözat</b> ile PoligonPro.exe'yi ekleyin) → <b>Seçenekler → Yüksek performans</b> → Kaydet. Sonra programı yeniden açın.</p></div>` }), 1500);
   if (SAFE) toast('Program uyumluluk modunda çalışıyor (ekran kartı yerine yazılımla çizim). Ayarlar\'dan değiştirebilirsiniz.', 'ok', 7000);
 }
 
@@ -261,7 +270,7 @@ function renderAll() {
 function updateStatus() {
   const A = ed.analyze();
   $('#stSummary').innerHTML = `<b>${A.targets.length}</b> hedef · <b>${A.atim}</b> atım · <b>${A.points.length}</b> atış noktası`;
-  $('#stQuality').innerHTML = `Grafik: <b>${QUALITY[engine.quality].ad}</b>`;
+  $('#stQuality').innerHTML = `Grafik: <b>${QUALITY[engine.quality].ad}</b> · <span title="Kullanılan ekran kartı">${esc(engine.gpuName())}</span>`;
 }
 
 let autosaveTimer = null;

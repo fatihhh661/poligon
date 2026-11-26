@@ -161,11 +161,34 @@ export class Engine {
       if (document.hidden) return;
       const dt = Math.min(this.clock.getDelta(), 0.25);
       this.fps = this.fps * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
+      this.adapt(dt);
       this.update(dt);
       this.composer.render();
       for (const f of this.afterRender) f();
     };
     loop();
+  }
+
+  /** Kare hızı düşerse çözünürlüğü kademeli düşür, toparlanınca geri yükselt */
+  adapt(dt) {
+    if (this.adaptOff) return;
+    this._at = (this._at || 0) + dt;
+    if (this._at < 2) return;
+    this._at = 0;
+    const r = this.renderer, target = Math.min(window.devicePixelRatio || 1, QUALITY[this.quality].pr);
+    const cur = r.getPixelRatio();
+    let next = cur;
+    if (this.fps < 48 && cur > 0.6) next = Math.max(0.6, cur - 0.1);
+    else if (this.fps > 58 && cur < target) next = Math.min(target, cur + 0.05);
+    if (Math.abs(next - cur) > 0.001) { r.setPixelRatio(next); this.resize(); }
+  }
+
+  gpuName() {
+    try {
+      const gl = this.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).replace(/ANGLE \(|\)$/g, '').replace(/Direct3D11.*$/, '').trim();
+    } catch (e) { return '?'; }
   }
 
   update(dt) {

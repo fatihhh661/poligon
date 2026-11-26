@@ -4,7 +4,7 @@ import { CATALOG, buildItem, defaultParams } from './objects.js';
 import { disposeObject } from './labels.js';
 
 /** Kütüphane için her elemanın 3D önizleme görüntüsünü üret. */
-export async function renderThumbs(onProgress) {
+export async function renderThumbs(onProgress, only = null) {
   const W = 240, H = 180;
   const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   r.setSize(W, H);
@@ -20,7 +20,7 @@ export async function renderThumbs(onProgress) {
   scene.add(key);
   const cam = new THREE.PerspectiveCamera(30, W / H, 0.01, 100);
   const out = {};
-  const types = Object.keys(CATALOG);
+  const types = only || Object.keys(CATALOG);
   for (let i = 0; i < types.length; i++) {
     const t = types[i];
     const it = { id: 'th', type: t, x: 0, z: 0, rot: 0, p: defaultParams(t) };

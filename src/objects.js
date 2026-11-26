@@ -282,10 +282,10 @@ export const CATALOG = {
   },
   pencere: {
     ad: 'Pencereli Paravan', kat: 'Tahtalar ve Engeller', uzun: true,
-    params: [P.w(2.4), P.h(1.9),
+    params: [P.w(2.4), P.h(2.1),
       { k: 'pw', ad: 'Pencere genişliği (m)', tip: 'sayi', def: 1.1, min: 0.2, max: 3, step: 0.05 },
-      { k: 'ph', ad: 'Pencere yüksekliği (m)', tip: 'sayi', def: 0.75, min: 0.2, max: 2, step: 0.05 },
-      { k: 'py', ad: 'Pencere alt kenarı (m)', tip: 'sayi', def: 0.95, min: 0.1, max: 2.5, step: 0.05 }],
+      { k: 'ph', ad: 'Pencere yüksekliği (m)', tip: 'sayi', def: 0.7, min: 0.2, max: 2, step: 0.05 },
+      { k: 'py', ad: 'Pencere alt kenarı (m)', tip: 'sayi', def: 1.15, min: 0.1, max: 2.5, step: 0.05 }],
     build: (p) => {
       const pw = Math.min(p.pw, p.w - 0.2), ph = Math.min(p.ph, p.h - 0.2);
       const py = Math.min(p.py, p.h - ph - 0.05);

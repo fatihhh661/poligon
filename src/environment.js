@@ -582,7 +582,8 @@ export class Environment {
         this.group.add(fm, tm);
       }
     };
-    mkInst(near, variants, true);
+    mkInst(near.filter((t) => Math.hypot(t.x, t.z + this.D / 2) < 85), variants, true);
+    mkInst(near.filter((t) => Math.hypot(t.x, t.z + this.D / 2) >= 85), variants, false);
     mkInst(far, variantsLod, false);
 
     // ---- kayalar: taranmış modeller + küçük taşlar ----

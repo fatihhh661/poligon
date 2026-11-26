@@ -1,0 +1,1 @@
+export const THUMB_FILES = ["hedef","mini","dost","popper","mini_popper","plaka","kare_plaka","plaka_rafi","duvar","pencere","kapi","barikat","kum","varil","palet","lastik","masa","sandik","muhimmat","kaide","kutu","baslangic","hata","ok","koni","direk","yazi","asker"];

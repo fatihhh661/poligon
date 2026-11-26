@@ -170,6 +170,10 @@ export class PlayMode {
         // kapıdan geçilebilsin: yalnızca iki kasa dikmesi engel
         const w = it.p?.w ?? 0.9;
         for (const sx of [-1, 1]) this.colliders.push({ x: it.x, z: it.z, rot: it.rot || 0, cx: sx * (w / 2 + 0.04), cz: 0, hx: 0.05, hz: 0.05 });
+        // açık kapı kanadı: menteşeden kanat açısıyla uzanan ince engel
+        const a = ((it.p?.aci ?? 70) * Math.PI) / 180, r = it.rot || 0;
+        const lx = -w / 2 + Math.cos(a) * (w / 2), lz = -Math.sin(a) * (w / 2);
+        this.colliders.push({ x: it.x + lx * Math.cos(r) + lz * Math.sin(r), z: it.z - lx * Math.sin(r) + lz * Math.cos(r), rot: r + a, cx: 0, cz: 0, hx: w / 2, hz: 0.03 });
         continue;
       }
       const body = o.getObjectByName('body');

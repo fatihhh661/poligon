@@ -44,6 +44,9 @@ saveState({ pending: true });
 log(`--- Poligon Pro başlatılıyor | Electron ${process.versions.electron} | Windows ${os.release()} | ${os.arch()} | RAM ${(os.totalmem() / 1073741824).toFixed(1)} GB | mod: ${safeMode ? 'UYUMLULUK' : 'normal'}`);
 
 app.commandLine.appendSwitch('disable-gpu-sandbox');
+// Optimus laptoplarda tümleşik grafik yerine harici ekran kartını (NVIDIA/AMD) kullan
+app.commandLine.appendSwitch('force_high_performance_gpu');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
 if (safeMode) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('enable-unsafe-swiftshader');
