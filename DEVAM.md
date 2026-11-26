@@ -45,6 +45,7 @@ Bu dosya, programı bugüne kadar geliştiren oturumun özetidir. Yeni oturum i�
 - Git ve Node.js LTS (v26) winget ile kuruldu. Proje: `C:\Users\Excalibur\Documents\PoligonPro`.
 - Node 26 + npm 11: `npm install` electron/esbuild kurulum betiklerini çalıştırmıyor. Electron zip'i `%LOCALAPPDATA%\electron\Cache` içinden `node_modules\electron\dist`'e elle açıldı, `path.txt` = `electron.exe`.
 - `scripts/build.mjs`, `fetch-assets.mjs`, `package.mjs`: Windows yol hatası (`C:\C:\...`) `fileURLToPath` ile düzeltildi.
+- `npm run paket` Windows'ta çalışır: aynı Node 26 extract-zip hatası için paketleyicinin zip açıcısı `tar.exe` ile değiştirildi, zip de `tar -a` ile üretiliyor. `ekran-goruntuleri/` ve `DEVAM.md` pakete girmez. electron-builder ilk çalıştırmada NSIS araçlarını kendi GitHub sürümlerinden indirir.
 - Ekran görüntüsü otomasyonu: `npx electron . --remote-debugging-port=9223` ile açıp CDP üzerinden `window.__pp.engine.capture(2560,1440)`. Sayfa içinden `location.reload()` çalışmaz (`will-navigate` engelli); CDP `Page.reload` kullanılmalı. Görüntüler `ekran-goruntuleri/` (git dışı).
 
 ## Çözülmüş sorunlar (tekrar bozulmasın)

@@ -1,9 +1,19 @@
 // Windows için taşınabilir paket: dist/PoligonPro-win32-x64 + zip
-import { packager } from '@electron/packager';
 import { execSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+// Node 26'da extract-zip (yauzl) Electron zip'inin yalnızca ilk dosyasını açıp sessizce duruyor.
+// Windows'ta paketleyicinin kullandığı extract-zip'i yerleşik tar.exe ile değiştir.
+if (process.platform === 'win32') {
+  const req = createRequire(createRequire(import.meta.url).resolve('@electron/packager'));
+  const id = req.resolve('extract-zip');
+  const tarExtract = async (zip, { dir }) => { mkdirSync(dir, { recursive: true }); execSync(`tar -xf "${zip}" -C "${dir}"`); };
+  req.cache[id] = { id, filename: id, loaded: true, exports: tarExtract };
+}
+const { packager } = await import('@electron/packager');
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const out = join(root, 'dist');
