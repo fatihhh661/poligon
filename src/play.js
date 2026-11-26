@@ -222,7 +222,8 @@ export class PlayMode {
         if (this.state === 'intro' && k === 'enter') { this.start(false); return; }
         if (this.state === 'finished' && k === 'enter') { this.restart(); return; }
         if (k === 'c') this.toggleStance('diz');
-        if (k === 'z' || k === 'x') this.toggleStance('yuzustu');
+        if (k === 'z') this.toggleStance('yuzustu');
+        if (k === 'x') this.toggleStance('alcak');
         if (k === 'r' && this.state === 'run') this.rec ? this.stopRec(true) : this.startRec();
         if (k === 'enter' && this.state === 'run') this.finish(false);
         e.stopPropagation();
@@ -387,7 +388,7 @@ export class PlayMode {
 
     // kamera
     this.aimT += ((aimNow ? 1 : 0) - this.aimT) * (1 - Math.exp(-dt * 12));
-    const eye = this.stance === 'ayakta' ? 1.62 : this.stance === 'diz' ? 1.12 : 0.78;
+    const eye = this.stance === 'ayakta' ? 1.62 : this.stance === 'diz' ? 1.12 : this.stance === 'alcak' ? 0.98 : 0.78;
     const sh = THREE.MathUtils.lerp(0.48, 0.3, this.aimT);
     const dist = this.stance === 'yuzustu' ? THREE.MathUtils.lerp(2.2, 1.0, this.aimT) : THREE.MathUtils.lerp(2.5, 0.95, this.aimT);
     const cp = Math.cos(this.camPitch), spp = Math.sin(this.camPitch);
@@ -703,7 +704,7 @@ export class PlayMode {
     // alt bilgi
     g.fillStyle = 'rgba(255,255,255,0.6)';
     g.font = font(600, 13);
-    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · Z: yüzüstü (W/S ile sürün) · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
+    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · X: alçak çöküş · Z: yüzüstü (W/S ile sürün) · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
     g.textAlign = 'right';
     g.fillStyle = 'rgba(243,239,228,0.55)';
     g.font = font(700, 15);
@@ -739,7 +740,7 @@ export class PlayMode {
         <div><kbd>W A S D</kbd> Hareket</div><div><kbd>Shift</kbd> Koşma</div>
         <div><kbd>Fare</kbd> Bakış</div><div><kbd>Sağ tık</kbd> Nişan al</div>
         <div><kbd>Sol tık</kbd> Ateş</div><div><kbd>C</kbd> Diz çök</div>
-        <div><kbd>Z</kbd> Yüzüstü (W/S sürünme)</div><div><kbd>R</kbd> Video kaydı aç/kapa</div>
+        <div><kbd>X</kbd> Alçak çöküş</div><div><kbd>Z</kbd> Yüzüstü (W/S sürünme)</div><div><kbd>R</kbd> Video kaydı aç/kapa</div>
         <div><kbd>Q</kbd> Sola köşe aç</div><div><kbd>E</kbd> Sağa köşe aç</div>
         <div><kbd>Enter</kbd> Parkuru bitir</div><div><kbd>Esc</kbd> Duraklat</div>
       </div>

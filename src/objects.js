@@ -557,11 +557,11 @@ export const CATALOG = {
   asker: {
     ad: 'Atıcı (Asker)', kat: 'Diğer',
     params: [
-      { k: 'poz', ad: 'Pozisyon', tip: 'secim', def: 'ayakta', ops: [['ayakta', 'Ayakta'], ['diz', 'Diz çökmüş'], ['yuzustu', 'Yüzüstü']] },
+      { k: 'poz', ad: 'Pozisyon', tip: 'secim', def: 'ayakta', ops: [['ayakta', 'Ayakta'], ['diz', 'Diz çökmüş'], ['alcak', 'Alçak çöküş'], ['yuzustu', 'Yüzüstü']] },
       { k: 'silah', ad: 'Silah', tip: 'secim', def: 'tufek', ops: [['tufek', 'Tüfek'], ['tabanca', 'Tabanca']] },
     ],
     build: (p) => buildSoldier(p.poz, p.silah) || soldier(p.poz),
-    top: (p) => (p.poz === 'ayakta' ? 1.85 : p.poz === 'diz' ? 1.45 : 0.5),
+    top: (p) => (p.poz === 'ayakta' ? 1.85 : p.poz === 'diz' ? 1.45 : p.poz === 'alcak' ? 1.3 : 0.5),
   },
 };
 

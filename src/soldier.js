@@ -342,9 +342,23 @@ export class Rig {
       rotWorld(neck, right, 0.35);
       rotWorld(head, right, 0.25);
       g.updateMatrixWorld(true);
-      // sürünme: bacaklar sırayla dizden yana çekilir, gövde hafif yuvarlanır
+      // sürünme (askeri alçak sürünme): sağ kol + sol diz birlikte öne, sonra sol kol + sağ diz.
+      // Uzanan kol yere tutunur, bacak iter; gövde öne kayar, omuzlar ve kalça yuvarlanır, baş sabit kalır.
       const cr = s.crawl || 0, ph = s.crawlPh || 0;
-      const kL = cr * Math.max(0, Math.sin(ph)), kR = cr * Math.max(0, -Math.sin(ph));
+      const sn = Math.sin(ph);
+      const kL = cr * Math.max(0, sn), kR = cr * Math.max(0, -sn);
+      if (cr > 0.01) {
+        const surge = Math.abs(Math.cos(ph)) * 0.05 * cr;  // itiş anında gövde öne kayar
+        root.position.z -= surge;
+        root.position.y += Math.abs(sn) * 0.02 * cr;      // göğüs her çekişte hafif kalkar
+        root.position.x += sn * 0.03 * cr;                 // kalça yana salınır
+        g.updateMatrixWorld(true);
+        rotWorld(spine, back, sn * 0.09 * cr);             // kalça yuvarlanması
+        rotWorld(spine2, back, -sn * 0.12 * cr);           // omuz yuvarlanması (karşı yön)
+        rotWorld(spine1, up, sn * 0.06 * cr);
+        rotWorld(neck, back, sn * 0.06 * cr);              // baş dik ve ileri bakar
+        g.updateMatrixWorld(true);
+      }
       for (const [side, sx, k] of [['Left', -1, kL], ['Right', 1, kR]]) {
         const foot = L(sx * (0.2 + k * 0.18), 0.09 + k * 0.02, 1.0 - k * 0.42);
         const pole = L(sx * (0.25 + k * 0.6), 0.02 - (1 - k) * 0.5, 0.55);
@@ -352,7 +366,16 @@ export class Rig {
         const fb = B(side + 'Foot'), toe = B(side + 'ToeBase');
         if (fb && toe) pointBone(fb, toe, wpos(fb).add(L(0, -0.2, 0.08).sub(L(0, 0, 0))));
       }
-      if (cr > 0.01) rotWorld(spine, back, Math.sin(ph) * 0.05 * cr);
+    } else if (s.stance === 'alcak') {
+      // alçak çöküş: sağ diz yerde, kalça sağ topuğun üstünde, sol ayak önde basılı
+      root.position.y = -0.66;
+      root.position.z = 0.08;
+      g.updateMatrixWorld(true);
+      twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.17, 0.1, -0.42), L(-0.25, 1.2, -1.2));
+      twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.16, 0.13, 0.3), L(0.25, -0.8, -1.0));
+      rotWorld(B('RightFoot'), right, -1.15);
+      rotWorld(spine, right, 0.32);
+      rotWorld(spine1, right, 0.12);
     } else if (s.stance === 'diz') {
       root.position.y = -0.46;
       g.updateMatrixWorld(true);
@@ -401,6 +424,8 @@ export class Rig {
       o.position.copy(butt).addScaledVector(dir, W.buttOffset);
     }
     g.updateMatrixWorld(true);
+    const cr = s.stance === 'yuzustu' ? s.crawl || 0 : 0;
+    if (cr > 0.02) return this.crawlArms(cr, s.crawlPh || 0, sL, sLl, L, toL, up, right);
     const gR = o.localToWorld(W.gripR.clone());
     const gL = o.localToWorld(W.gripL.clone());
     let poleR, poleL;
@@ -421,6 +446,41 @@ export class Rig {
     pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
     this.curl('Right', 0.9);
     this.curl('Left', this.silah === 'tabanca' ? 0.9 : 0.6);
+  }
+
+  /**
+   * Sürünürken kollar: uzanan kol öne yere tutunur, diğeri göğüs altına çekilir.
+   * Tüfek sağ elde, namlu ileri, gövdenin sağında yere paralel taşınır.
+   * cr ile nişan duruşundan sürünme duruşuna yumuşak geçiş yapılır.
+   */
+  crawlArms(cr, ph, sL, sLl, L, toL, up, right) {
+    const B = this.B, W = this.weapon, o = W.obj, g = this.group;
+    const sn = Math.sin(ph);
+    const reachR = Math.max(0, sn), reachL = Math.max(0, -sn);   // sağ kol sol dizle, sol kol sağ dizle
+    const lift = (r, c) => 0.07 + Math.max(0, Math.cos(ph + c)) * 0.05 * r; // ileri giderken el hafif havada
+    const handR = V(sL.x + 0.1, lift(reachR, 0), sL.z - 0.12 - reachR * 0.32 + reachL * 0.08);
+    const handL = V(sLl.x - 0.06, lift(reachL, Math.PI), sLl.z - 0.18 - reachL * 0.34 + reachR * 0.08);
+    // tüfek: sağ elle tutulur, namlu ileri, yere paralel, hafif yatık
+    const prevRot = o.rotation.clone(), prevPos = o.position.clone();
+    o.rotation.set(-0.04, -0.05, 0.5);
+    const grip = W.gripR.clone().applyEuler(o.rotation);
+    const crawlPos = handR.clone().sub(grip);
+    o.position.lerpVectors(prevPos, crawlPos, Math.min(1, cr * 1.4));
+    o.rotation.set(THREE.MathUtils.lerp(prevRot.x, -0.04, cr), THREE.MathUtils.lerp(prevRot.y, -0.05, cr), THREE.MathUtils.lerp(prevRot.z, 0.5, cr));
+    g.updateMatrixWorld(true);
+    const gR = o.localToWorld(W.gripR.clone());
+    const gLw = o.localToWorld(W.gripL.clone());
+    const hLw = g.localToWorld(handL.clone());
+    const tL = gLw.lerp(hLw, Math.min(1, cr * 1.4));
+    const poleR = L(sL.x + 0.55, 0.45, sL.z + 0.05);
+    const poleL = L(sLl.x - 0.55, 0.45, sLl.z + 0.05);
+    twoBoneIK(B('RightArm'), B('RightForeArm'), B('RightHand'), gR, poleR);
+    twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), tL, poleL);
+    // sol el avuç yere dönük, parmaklar ileri
+    const hl = wpos(B('LeftHand'));
+    pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().add(g.localToWorld(V(0.02, -0.04, -0.1)).sub(g.localToWorld(V(0, 0, 0)))));
+    this.curl('Right', 0.9);
+    this.curl('Left', 0.25 + reachR * 0.3);
   }
 
   /** Mark iskeletinde parmak bükme yönünü ölçerek belirle */
