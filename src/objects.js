@@ -15,8 +15,8 @@ export function initMaterials(tex) {
     wood: real ? pbrMaterial('wood', { color: 0xb59a7c }) : S({ map: tex.wood, roughness: 0.85 }),
     woodLight: real ? pbrMaterial('wood', { color: 0xe8d6bc }) : S({ map: tex.woodLight, roughness: 0.85 }),
     cardboard: S({ color: 0x9c7c55, roughness: 1 }),
-    paper: S({ map: tex.target, roughness: 0.92, side: THREE.FrontSide }),
-    paperDost: S({ map: tex.targetDost, roughness: 0.92 }),
+    paper: S({ map: tex.target, roughness: 0.92, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+    paperDost: S({ map: tex.targetDost, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     steel: S({ color: 0xe0612a, roughness: 0.5, metalness: 0.35 }),
     steelDark: S({ color: 0x33383e, roughness: 0.45, metalness: 0.75 }),
     red: real ? pbrMaterial('wood', { color: 0xd23a2a }) : S({ color: 0xc62828, roughness: 0.6 }),
@@ -95,8 +95,8 @@ function panelGeo(w, h, holes = [], depth = 0.018) {
 
 function paperTarget(g, bw, bh, bottom, mat) {
   // karton arka
-  g.add(box(bw + 0.02, bh + 0.02, 0.012, M.cardboard, 0, bottom + bh / 2, -0.008));
-  const face = mesh(new THREE.PlaneGeometry(bw, bh), mat, 0, bottom + bh / 2, 0.0);
+  g.add(box(bw + 0.02, bh + 0.02, 0.012, M.cardboard, 0, bottom + bh / 2, -0.014));
+  const face = mesh(new THREE.PlaneGeometry(bw, bh), mat, 0, bottom + bh / 2, 0.003);
   g.add(face);
   // ahşap kazıklar + taban
   const top = bottom + bh * 0.85;

@@ -87,7 +87,7 @@ export class PlayMode {
     this.buildRig();
     this.prepareCourse();
     this.buildBVH();
-    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.near = this.view === 'fps' ? 0.05 : 0.1;
     this.engine.camera.updateProjectionMatrix();
     this.bindInput();
     E.onFrame.push(this._tick);
@@ -590,7 +590,7 @@ export class PlayMode {
     if (this.state === 'replay') return;
     this.view = this.view === 'fps' ? 'tps' : 'fps';
     this.rig.setFirstPerson(this.view === 'fps');
-    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.near = this.view === 'fps' ? 0.05 : 0.1;
     this.engine.camera.updateProjectionMatrix();
     this._fpEye = null;
     this.say(this.view === 'fps' ? '1. ŞAHIS GÖRÜŞ' : '3. ŞAHIS GÖRÜŞ', '#ffffff', 0.9);
@@ -846,7 +846,7 @@ export class PlayMode {
     this.rpBar = null;
     this.state = 'finished';
     this.rig.setFirstPerson(this.view === 'fps');
-    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.near = this.view === 'fps' ? 0.05 : 0.1;
     this.engine.camera.updateProjectionMatrix();
     // parkuru koşunun bittiği hale getir
     this.seekReplay(this.rp.end + 1);
@@ -1026,7 +1026,7 @@ export class PlayMode {
     rp.curCam = mode;
     if (cut) {
       this.rig.setFirstPerson(mode === 'fps');
-      E.camera.near = mode === 'fps' ? 0.03 : 0.1;
+      E.camera.near = mode === 'fps' ? 0.05 : 0.1;
       E.camera.updateProjectionMatrix();
     }
     if (this.shake > 0) c.p.x += (Math.random() - 0.5) * 0.02 * this.shake;
