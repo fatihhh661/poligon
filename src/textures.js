@@ -262,6 +262,107 @@ export function makeSignTexture(lines) {
   return t;
 }
 
+/** Yükseklik alanından teğet uzayı normal haritası (döşenebilir, Sobel) */
+function heightToNormal(H, N, strength) {
+  const c = cnv(N), g = c.getContext('2d');
+  const img = g.createImageData(N, N), d = img.data;
+  const at = (x, y) => H[((y + N) % N) * N + ((x + N) % N)];
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+      const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+      let nx = -dx * strength, ny = dy * strength, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l; ny /= l; nz /= l;
+      const i = (y * N + x) * 4;
+      d[i] = (nx * 0.5 + 0.5) * 255;
+      d[i + 1] = (ny * 0.5 + 0.5) * 255;
+      d[i + 2] = (nz * 0.5 + 0.5) * 255;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+/**
+ * Jüt çuval bezi (kum torbası): açık örgülü, düzensiz kalınlıkta lifler, ipliklerin
+ * altından görünen koyu boşluklar, toz ve toprak lekeleri. Renk + normal + pürüzlülük.
+ */
+export function makeBurlap(aniso = 8) {
+  const N = 512, T = 40; // T: döşemedeki iplik sayısı (her yön)
+  const cell = N / T;
+  const n1 = perlin(301), n2 = perlin(302), n3 = perlin(303);
+  const r = rng(304);
+  // iplik başına kalınlık / ton / kayma değişimi (doğal jüt düzensizliği)
+  const warp = Array.from({ length: T }, () => ({ w: 0.74 + r() * 0.16, t: 0.82 + r() * 0.3, o: (r() - 0.5) * 0.18 }));
+  const weft = Array.from({ length: T }, () => ({ w: 0.72 + r() * 0.18, t: 0.82 + r() * 0.3, o: (r() - 0.5) * 0.18 }));
+  const H = new Float32Array(N * N);
+  const c = cnv(N), g = c.getContext('2d');
+  const img = g.createImageData(N, N), d = img.data;
+  const rc = cnv(N), rg = rc.getContext('2d');
+  const rimg = rg.createImageData(N, N), rd = rimg.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      // ipliklerin hafif dalgalı gidişi
+      const wx = x + fbm(n1, (x / N) * 6, (y / N) * 6, 2, 6) * cell * 0.5;
+      const wy = y + fbm(n2, (x / N) * 6, (y / N) * 6, 2, 6) * cell * 0.5;
+      const ci = Math.floor(wx / cell), cj = Math.floor(wy / cell);
+      const fi = wx / cell - ci, fj = wy / cell - cj;
+      const a = warp[((ci % T) + T) % T], b = weft[((cj % T) + T) % T];
+      // iplik kesit profili (yuvarlak), kalınlık değişken
+      const pa = Math.max(0, 1 - Math.pow(Math.abs(fi - 0.5 - a.o) / (a.w * 0.5), 2));
+      const pb = Math.max(0, 1 - Math.pow(Math.abs(fj - 0.5 - b.o) / (b.w * 0.5), 2));
+      // üst-alt örgü: hücreye göre hangi iplik üstte; üstteki iplik ortada kabarık
+      const over = ((ci + cj) & 1) === 0;
+      const bulgeA = 0.55 + 0.45 * Math.sin(Math.PI * fj);
+      const bulgeB = 0.55 + 0.45 * Math.sin(Math.PI * fi);
+      const ha = Math.sqrt(pa) * (over ? bulgeA : 0.55);
+      const hb = Math.sqrt(pb) * (over ? 0.55 : bulgeB);
+      // lif dokusu: iplik yönünde uzamış ince gürültü (bükülmüş lif)
+      const fibA = n3((x / N) * 6, (y / N) * 160, 160) * 0.5 + n3((x / N) * 3, (y / N) * 90 + 7, 90) * 0.3;
+      const fibB = n3((x / N) * 160, (y / N) * 6 + 13, 160) * 0.5 + n3((x / N) * 90 + 3, (y / N) * 3, 90) * 0.3;
+      let h, tone, fib;
+      if (ha >= hb) { h = ha; tone = a.t; fib = fibA; } else { h = hb; tone = b.t; fib = fibB; }
+      const gap = Math.max(ha, hb) < 0.05; // örgü boşluğu
+      h = gap ? 0 : h * (0.9 + fib * 0.25);
+      H[y * N + x] = h;
+      // renk: jüt (sıcak bej-kahve), boşluklar koyu, leke ve toz
+      const stain = fbm(n1, (x / N) * 3 + 11, (y / N) * 3 + 5, 4, 3);
+      const dust = fbm(n2, (x / N) * 9 + 2, (y / N) * 9, 3, 9);
+      // iplik başına ton farkı çok küçük tutulur; büyük olursa uzaktan "kareli kumaş" gibi görünür
+      let k = gap ? 0.66 : (0.8 + 0.2 * h) * (0.97 + (tone - 0.97) * 0.12) * (1 + fib * 0.2);
+      k *= 1 - Math.max(0, stain) * 0.5;
+      const R = 146 * k + dust * 16, G = 129 * k + dust * 14, B = 97 * k + dust * 10;
+      const i = (y * N + x) * 4;
+      d[i] = clamp(R, 0, 255); d[i + 1] = clamp(G, 0, 255); d[i + 2] = clamp(B, 0, 255); d[i + 3] = 255;
+      const ro = clamp((gap ? 1 : 0.86 + (1 - h) * 0.1 - fib * 0.05) * 255, 0, 255);
+      rd[i] = ro; rd[i + 1] = ro; rd[i + 2] = ro; rd[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  rg.putImageData(rimg, 0, 0);
+  // dışarı fırlamış tüyler (jütün tüylü görünümü)
+  g.lineWidth = 0.7;
+  for (let i = 0; i < 1400; i++) {
+    const x = r() * N, y = r() * N, L = 3 + r() * 9, a = r() * Math.PI * 2;
+    const v = 150 + r() * 60;
+    g.strokeStyle = `rgba(${v | 0},${(v * 0.85) | 0},${(v * 0.6) | 0},${0.25 + r() * 0.35})`;
+    wrapDraw(N, x, y, L, (px, py) => {
+      g.beginPath();
+      g.moveTo(px, py);
+      g.quadraticCurveTo(px + Math.cos(a + 0.6) * L * 0.5, py + Math.sin(a + 0.6) * L * 0.5, px + Math.cos(a) * L, py + Math.sin(a) * L);
+      g.stroke();
+    });
+  }
+  const nc = heightToNormal(H, N, 2.6);
+  return {
+    map: tex(c, { aniso }),
+    normalMap: tex(nc, { aniso, srgb: false }),
+    roughnessMap: tex(rc, { aniso, srgb: false }),
+  };
+}
+
 let cache = null;
 export function getTextures(renderer) {
   if (cache) return cache;
@@ -278,6 +379,7 @@ export function getTextures(renderer) {
     roof: makeRoof(aniso),
     target: makeTargetTexture('normal'),
     targetDost: makeTargetTexture('dost'),
+    burlap: makeBurlap(aniso),
   };
   return cache;
 }

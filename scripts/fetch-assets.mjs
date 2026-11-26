@@ -2,9 +2,10 @@
 // Kullanım: node scripts/fetch-assets.mjs
 import { mkdirSync, existsSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const OUT = join(root, 'app/assets');
 const TMP = join(root, 'dist/asset-src');
 mkdirSync(OUT, { recursive: true });

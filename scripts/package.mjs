@@ -3,8 +3,9 @@ import { packager } from '@electron/packager';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const out = join(root, 'dist');
 const paths = await packager({
   dir: root,
@@ -20,12 +21,14 @@ const paths = await packager({
   appCopyright: 'Poligon Pro',
   appVersion: '1.0.0',
   win32metadata: { CompanyName: 'Poligon Pro', FileDescription: 'Poligon Pro - Parkur Tasarım ve Sunum Sistemi', ProductName: 'Poligon Pro', InternalName: 'PoligonPro', OriginalFilename: 'PoligonPro.exe' },
-  ignore: [/^\/indir($|\/)/, /^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /\.map$/, /^\/build\/icon\.ico$/],
+  ignore: [/^\/indir($|\/)/, /^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /^\/DEVAM\.md$/, /^\/ekran-goruntuleri($|\/)/, /\.map$/, /^\/build\/icon\.ico$/],
 });
 console.log('Paket:', paths);
 const zip = join(out, 'PoligonPro-Windows.zip');
 if (existsSync(zip)) rmSync(zip);
-execSync(`cd "${out}" && zip -qr -9 PoligonPro-Windows.zip PoligonPro-win32-x64`);
+// Windows'ta "zip" komutu yok: yerleşik tar.exe zip biçimini destekler
+if (process.platform === 'win32') execSync('tar -a -c -f PoligonPro-Windows.zip PoligonPro-win32-x64', { cwd: out });
+else execSync(`cd "${out}" && zip -qr -9 PoligonPro-Windows.zip PoligonPro-win32-x64`);
 console.log('Zip:', zip);
 // Tek dosyalık taşınabilir exe (çıkartma gerektirmez, açılışta yükleniyor ekranı gösterir)
 execSync(`npx electron-builder --win portable --x64 --prepackaged "${paths[0]}" --config scripts/builder.json`, { cwd: root, stdio: 'inherit' });

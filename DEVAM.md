@@ -39,7 +39,13 @@ Bu dosya, programı bugüne kadar geliştiren oturumun özetidir. Yeni oturum i�
   - Poly Haven (CC0) doku, HDR ve modelleri.
   - Sketchfab'den asker ve M4 (CC-BY). Atıflar Hakkında penceresinde.
 - Paketleme: `node scripts/package.mjs`. Çıktı: `dist/PoligonPro-Kurulum.zip` ve taşınabilir exe.
-- Önceki oturum bulutta ekran kartı olmadan çalıştı. Bu yüzden testleri yalnızca **Düşük** kalitede görebildi; Yüksek ve Ultra ekranı siyah çiziyordu. **Gerçek görüntüyü ilk kez bu laptopta göreceksin.**
+- İlk oturum bulutta ekran kartı olmadan çalıştı (yalnızca Düşük kalite görülebildi). **2. oturum (26.11.2026) kullanıcının laptopunda RTX 3060 ile çalıştı**; aşağıdaki çevre grafikleri gerçek donanımda Yüksek/Ultra/Düşük kalitede görülerek ayarlandı.
+
+## Laptop kurulumu (2. oturumda yapıldı)
+- Git ve Node.js LTS (v26) winget ile kuruldu. Proje: `C:\Users\Excalibur\Documents\PoligonPro`.
+- Node 26 + npm 11: `npm install` electron/esbuild kurulum betiklerini çalıştırmıyor. Electron zip'i `%LOCALAPPDATA%\electron\Cache` içinden `node_modules\electron\dist`'e elle açıldı, `path.txt` = `electron.exe`.
+- `scripts/build.mjs`, `fetch-assets.mjs`, `package.mjs`: Windows yol hatası (`C:\C:\...`) `fileURLToPath` ile düzeltildi.
+- Ekran görüntüsü otomasyonu: `npx electron . --remote-debugging-port=9223` ile açıp CDP üzerinden `window.__pp.engine.capture(2560,1440)`. Sayfa içinden `location.reload()` çalışmaz (`will-navigate` engelli); CDP `Page.reload` kullanılmalı. Görüntüler `ekran-goruntuleri/` (git dışı).
 
 ## Çözülmüş sorunlar (tekrar bozulmasın)
 - Exe açılıp kapanıyordu: `executableName: "PoligonPro"` ile düzeldi.
@@ -49,16 +55,25 @@ Bu dosya, programı bugüne kadar geliştiren oturumun özetidir. Yeni oturum i�
 - Nişangâh merminin gerçekten isabet edeceği yeri gösteriyor. Engel arkasındaki hedef vurulamıyor.
 - Yüzüstü duruş ve nizami sürünme düzeltildi. Ayak zemine gömülmüyor.
 - Tekrar izlemede silahın uçup gitmesi: yay hesabı alt adımlara bölündü.
+- (2. oturum) GTAO derinlik geçişi alfa testini bilmez: yaprak/impostor kartları uzakta dikdörtgen gölge lekesi bırakıyordu → bitki örneklerinde `userData.noAO = true`.
+- (2. oturum) Ayrıntılı ve gölge düşüren ağaçlar yalnızca gölge haritası alanında (`nearR`). InstancedMesh örnek başına kırpılmadığı için dışarıdakiler gölge geçişinde boşuna çiziliyor, Oynama Modu'nu ~%15 yavaşlatıyordu.
+- (2. oturum) Düşük kalitede MSAA yok: yapraklarda `alphaToCoverage` kapalı olmalı, yoksa beyaz kenar parıltısı çıkar.
 
-## Sıradaki iş (kullanıcının onayladığı yön)
-1. **Önce programı Yüksek kalitede çalıştır, ekran görüntüsü al ve dürüstçe değerlendir.**
-2. Çevre grafikleri. Sahneyi "atari" gösteren asıl bunlar:
-   - Kum torbaları çizgi film gibi, turuncu ve yuvarlak. Gerçek bez dokulu, çökük torbalar olmalı.
-   - Ağaçlar düz kartlardan yapılmış. Taranmış ve gerçekçi çam ya da impostor yöntemi gerekiyor.
-   - Zemin dümdüz ve tek renk. Ayak izi, çukur, renk farkı ve çakıl kümeleri eklenmeli.
-   - Toprak set ve tepeler kum tepesi gibi pürüzsüz.
-   - Atmosfer: uzak pus ve hava perspektifi yok.
-   - TAA ve daha keskin görüntü filtresi.
+## 2. oturumda yapılan çevre grafikleri (hepsi gerçek GPU'da doğrulandı)
+- **Kum torbası** (`objects.js`, `textures.js` → `makeBurlap`): prosedürel jüt çuval bezi (renk + normal + pürüzlülük), her torba deforme edilmiş ağ (düz taban, şişkin yan, dikişli yassı uç, altına katlanmış ağız, kırışık, topak, tabanda kir köşe rengi), 6 varyant, şaşırtmalı dizilim, alt sıralar yük altında basık. Kütüphane önizlemesi `app/assets/thumbs/kum.png` yenilendi.
+- **Ağaçlar** (`environment.js` → `pineGeometry`, `bakeImpostor`): kademeli dal yapısı, her dalda eğilip sarkan 3 çapraz kart (yatay kart yok), taç içi karanlık/uçlar aydınlık köşe rengi, hacimli normaller, arka yüz normali çevrilmiyor, basit geçirgenlik, gövde kütükleri. 3 katman: yakın (ayrıntılı+gölge), orta (sade), uzak (renk+normal dokusu fırınlanmış impostor çapraz kart, 13 000 ağaç).
+- **Zemin** (`floorMask`, `floorShader`): 1024x2048 ayrıntı maskesi (toprak dökülmesi, araç tekerlek izi ve diş izi, ayak izi dizileri, atış hattında aşınma, set dibinde mermi çukurları, çukur/tümsek) + çakıl/toprak karışımı ve normal sapması. Zemin fiziksel olarak düz kaldı (asker `groundY 0.015` kabulü bozulmadı). Kenarlarda taş kümeleri ve ot öbekleri.
+- **Setler ve tepeler**: dalgalı etek, değişken sırt, erozyon olukları, dozer izi, topaklar; uçlar araziye yumuşak iner; eğrilikten köşe rengi; arka sette hedef yüksekliğinde koyu darbe bandı. Uzak dağlarda geniş ölçekli sırt/vadi. Kayalar etekte ve sırtta kümelenir.
+- **Atmosfer**: three.js sis chunk'ları değiştirildi → yüksekliğe bağlı üstel pus + uzakta doygunluk kaybı (`installAtmosphere`, `setAtmosphere`). Sabah/akşam daha puslu.
+- **Görüntü filtresi** (`engine.js`): SMAA (Ultra hariç) + AMD CAS tarzı uyarlamalı keskinleştirme (renk derecelendirme geçişinde).
+- **Performans** (RTX 3060, 1920x994, Yüksek): düzenleyici ~87 FPS (önce ~73). Oynama Modu ~27 FPS — **orijinal kodda da aynı**, bitki örtüsünden bağımsız (gizleyince değişmiyor); darboğaz `play.js` tarafında, CPU.
+
+## Sıradaki iş
+1. **Oynama Modu performansı**: Yüksek kalitede ~27 FPS (düzenleyici 87). Bitki örtüsü değil; `play.js` döngüsü profillenmeli (ışın atışları, BVH, mocap, HUD tuvali, 3. şahıs kamera çarpışması vb.).
+2. Çevre için kalan iyileştirmeler (kullanıcı isterse):
+   - Gerçek TAA (hareket vektörlü) yapılmadı; three.js WebGL hattında büyük iş. Şu an MSAA + SMAA + CAS.
+   - Ağaçlar hâlâ kart tabanlı; çok yakından (5 m altı) kart yapısı seçilebilir. Taranmış çam modeli (ör. Poly Haven) indirilirse yakın LOD'da kullanılabilir.
+   - Arka set yüzeyi hâlâ biraz düzgün/sarı; doku tabanlı mermi deliği maskesi eklenebilir.
 3. Daha sonra, kullanıcı seçerse:
    - PUBG kalitesinde hareket: atalet, başlama ve durma geçişleri, çömelerek yürüme, serbest bakış (Alt).
    - Geri tepme deseni, balistik, zemine göre ayak sesleri.

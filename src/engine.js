@@ -6,12 +6,28 @@ import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 
+/**
+ * Renk derecelendirme + uyarlamalı keskinleştirme (AMD CAS yaklaşımı): yerel kontrasta göre
+ * ağırlıklandırılır, düz alanlarda gürültü büyütmez, kenarlarda hale (halo) yapmaz.
+ */
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, vig: { value: 0.28 }, sat: { value: 1.08 }, con: { value: 1.06 } },
+  uniforms: { tDiffuse: { value: null }, vig: { value: 0.28 }, sat: { value: 1.08 }, con: { value: 1.06 }, sharp: { value: 0.5 }, texel: { value: null } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float vig; uniform float sat; uniform float con; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float vig; uniform float sat; uniform float con; uniform float sharp; uniform vec2 texel; varying vec2 vUv;
     void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      if (sharp > 0.001) {
+        vec3 n = texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb;
+        vec3 s = texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
+        vec3 e = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb;
+        vec3 w = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
+        vec3 mn = min(c.rgb, min(min(n, s), min(e, w)));
+        vec3 mx = max(c.rgb, max(max(n, s), max(e, w)));
+        vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
+        vec3 wt = amp * (-1.0 / mix(8.0, 5.0, sharp));
+        c.rgb = clamp((c.rgb + (n + s + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0);
+      }
       float l = dot(c.rgb, vec3(0.2126,0.7152,0.0722));
       c.rgb = mix(vec3(l), c.rgb, sat);
       c.rgb = (c.rgb - 0.5) * con + 0.5;
@@ -23,10 +39,10 @@ import { updateLabelScales } from './labels.js';
 import { easeInOut } from './util.js';
 
 export const QUALITY = {
-  dusuk: { ad: 'Düşük', pr: 1, shadow: 1024, samples: 0, ao: false },
-  orta: { ad: 'Orta', pr: 1, shadow: 2048, samples: 4, ao: false },
-  yuksek: { ad: 'Yüksek', pr: 1.25, shadow: 4096, samples: 4, ao: true },
-  ultra: { ad: 'Ultra', pr: 2, shadow: 4096, samples: 4, ao: true },
+  dusuk: { ad: 'Düşük', pr: 1, shadow: 1024, samples: 0, ao: false, smaa: true, sharp: 0.25 },
+  orta: { ad: 'Orta', pr: 1, shadow: 2048, samples: 4, ao: false, smaa: true, sharp: 0.4 },
+  yuksek: { ad: 'Yüksek', pr: 1.25, shadow: 4096, samples: 4, ao: true, smaa: true, sharp: 0.5 },
+  ultra: { ad: 'Ultra', pr: 2, shadow: 4096, samples: 4, ao: true, smaa: false, sharp: 0.35 },
 };
 
 export class Engine {
@@ -108,7 +124,14 @@ export class Engine {
     op.selectedObjects = this._selected || [];
     this.composer.addPass(op);
     this.composer.addPass(new OutputPass());
-    this.composer.addPass(new ShaderPass(GradeShader));
+    // SMAA: MSAA'nın yakalayamadığı kenarlar (alfa testli dallar, ince çizgiler, gölge kenarı).
+    // Ultra'da çözünürlük zaten 2x olduğu için gerekmez.
+    if (q.smaa) this.composer.addPass(new SMAAPass(size.x, size.y));
+    const gp = (this.gradePass = new ShaderPass(GradeShader));
+    gp.uniforms.sharp.value = q.sharp ?? 0.4;
+    gp.uniforms.texel.value = new THREE.Vector2(1 / size.x, 1 / size.y);
+    gp.setSize = (w, h) => gp.uniforms.texel.value.set(1 / Math.max(1, w), 1 / Math.max(1, h));
+    this.composer.addPass(gp);
     this.resize();
   }
 

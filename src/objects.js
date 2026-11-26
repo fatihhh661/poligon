@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeLabel } from './labels.js';
+import { perlin, rng, smoothstep } from './util.js';
 import { A, pbrMaterial, modelClone } from './assets.js';
 import { buildSoldier } from './soldier.js';
 
@@ -39,7 +40,87 @@ export function initMaterials(tex) {
     helmet: S({ color: 0x4c5230, roughness: 0.8 }),
     ghost: S({ color: 0xffffff, transparent: true, opacity: 0.5 }),
   };
+  // jüt kum torbası: üç ton (yeni, yıpranmış, tozlu) — doku ve kir köşe renkleriyle
+  M.burlap = [[1, 1, 1], [0.8, 0.76, 0.68], [1.08, 1.04, 0.96]].map(([r, g, b]) => {
+    const m = new THREE.MeshStandardMaterial({
+      map: tex.burlap?.map || null, normalMap: tex.burlap?.normalMap || null, roughnessMap: tex.burlap?.roughnessMap || null,
+      roughness: 1, metalness: 0, vertexColors: true,
+    });
+    m.color.setRGB(r, g, b);
+    m.normalScale.set(0.75, 0.75);
+    return m;
+  });
   return M;
+}
+
+// ---------- kum torbası ----------
+const BAG = { hx: 0.26, hy: 0.082, hz: 0.16 };
+let bagGeos = null;
+/** Dolu bir çuval: düz taban, şişkin yanlar, dikişli yassı uç, altına katlanmış ağız, kırışık ve topaklar */
+function bagGeometry(seed) {
+  const r = rng(seed), n = perlin(seed * 7 + 1);
+  let g = new THREE.BoxGeometry(2, 2, 2, 22, 7, 13);
+  g.deleteAttribute('uv');
+  g.deleteAttribute('normal');
+  g = mergeVertices(g);
+  const pos = g.attributes.position;
+  const lump = 0.05 + r() * 0.04, sagK = 0.02 + r() * 0.03, twist = (r() - 0.5) * 0.12;
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // süperelipsoid: kenarları yumuşak, yüzeyleri dolgun
+    const len = Math.pow(Math.pow(Math.abs(x), 3) + Math.pow(Math.abs(y), 2.4) + Math.pow(Math.abs(z), 3), 1 / 3);
+    x /= len; y /= len; z /= len;
+    const y0 = y;
+    // taban yere oturur (düz), üst hafif basık
+    y = y < 0 ? -0.84 * (1 - Math.pow(1 + y, 3)) : 0.94 * (1 - Math.pow(1 - y, 2.2));
+    // yanlar ortada şişkin
+    z *= 1 + 0.07 * (1 - x * x) * (1 - Math.abs(y0));
+    // dikişli uç (+x): incelir, yassı kulak dışarı uzar
+    const s = smoothstep(0.62, 1.0, x);
+    y *= 1 - 0.82 * s;
+    z *= 1 - 0.14 * s;
+    x += s * s * 0.16;
+    // ağzı katlanmış uç (-x): incelir ve altına kıvrılır
+    const s2 = smoothstep(-0.6, -1.0, x);
+    y = y * (1 - 0.4 * s2) - 0.12 * s2;
+    x *= 1 - 0.05 * s2;
+    // kırışıklar: uçlara doğru, enine
+    const wr = Math.sin(z * 17 + n(x * 2, z * 3) * 4) * 0.022 * (s + s2 * 0.7) + Math.sin(x * 23 + z * 5) * 0.006 * (1 - Math.abs(y0));
+    y += wr * Math.sign(y0 || 1);
+    // topaklar (kumun düzensiz dağılımı)
+    const d = 1 + n(x * 1.6 + seed, z * 2.1 + y * 1.3) * lump + n(x * 4 + 9, z * 4) * 0.012;
+    x *= 1 + (d - 1) * 0.4; y *= d; z *= d;
+    // ölçek ve sarkma (uçlar yere doğru), hafif burulma
+    let X = x * BAG.hx, Y = y * BAG.hy, Z = z * BAG.hz;
+    Y -= sagK * x * x * BAG.hy * 2 * (y0 > 0 ? 1 : 0.3);
+    Z += twist * X * Y * 8;
+    pos.setXYZ(i, X, Y, Z);
+    // köşe renkleri: tabanda toprak kiri, kırışık diplerinde koyuluk, rastgele lekeler
+    const dirt = smoothstep(-0.2, -0.85, y0) * 0.35;
+    const crease = Math.max(0, -wr) * 9 + (s + s2) * 0.08;
+    const blot = Math.max(0, n(x * 3 + 20, z * 3 + y0 * 2)) * 0.25;
+    const k = Math.max(0.45, 1 - dirt - crease - blot);
+    col[i * 3] = k; col[i * 3 + 1] = k * 0.97; col[i * 3 + 2] = k * 0.93;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  // baskın eksene göre düzlemsel UV (40 iplikli örgü ~0,13 m'de bir döşenir: ~3 mm iplik)
+  const nor = g.attributes.normal, uv = new Float32Array(pos.count * 2), T = 0.13;
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nor.getX(i)), ay = Math.abs(nor.getY(i)), az = Math.abs(nor.getZ(i));
+    const X = pos.getX(i), Y = pos.getY(i), Z = pos.getZ(i);
+    if (ay >= ax && ay >= az) { uv[i * 2] = X / T; uv[i * 2 + 1] = Z / T; }
+    else if (az >= ax) { uv[i * 2] = X / T; uv[i * 2 + 1] = Y / T; }
+    else { uv[i * 2] = Z / T; uv[i * 2 + 1] = Y / T; }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+function getBagGeos() {
+  return (bagGeos ||= [11, 23, 37, 41, 59, 67].map(bagGeometry));
 }
 export const mats = () => M;
 
@@ -323,14 +404,24 @@ export const CATALOG = {
     params: [P.w(1.5, 0.5, 8), { k: 'kat', ad: 'Sıra sayısı', tip: 'sayi', def: 4, min: 1, max: 8, step: 1 }],
     build: (p) => {
       const g = new THREE.Group();
-      const geo = new RoundedBoxGeometry(0.52, 0.16, 0.32, 2, 0.06);
+      const geos = getBagGeos();
       const n = Math.max(1, Math.round(p.w / 0.5));
+      const r = rng(n * 131 + p.kat * 17);
       for (let row = 0; row < p.kat; row++) {
+        // şaşırtmalı (tuğla) dizilim; üst sıralar yükün altında hafif basılır
         const off = row % 2 ? 0.25 : 0;
         const cnt = row % 2 ? n - 1 : n;
         for (let i = 0; i < cnt; i++) {
-          const m = mesh(geo, (i + row) % 2 ? M.sandA : M.sandB, -((n - 1) * 0.5) / 2 + off + i * 0.5, 0.08 + row * 0.15, 0);
-          m.rotation.y = ((i * 7 + row * 3) % 5 - 2) * 0.02;
+          const k = Math.floor(r() * geos.length);
+          const mat = M.burlap[r() < 0.6 ? 0 : r() < 0.6 ? 1 : 2];
+          const m = mesh(geos[k], mat,
+            -((n - 1) * 0.5) / 2 + off + i * 0.5 + (r() - 0.5) * 0.03,
+            0.07 + row * 0.142 + (r() - 0.5) * 0.008,
+            (r() - 0.5) * 0.035);
+          // ağızlar rastgele iki yöne; küçük sapma ve yatıklık (elle dizilmiş görünüm)
+          m.rotation.set((r() - 0.5) * 0.05, (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 0.09, (r() - 0.5) * 0.05);
+          const load = p.kat - row - 1; // üstündeki sıra sayısı
+          m.scale.set(1, 1 - load * 0.014, 1 + load * 0.01);
           m.userData.sharedGeo = true;
           g.add(m);
         }

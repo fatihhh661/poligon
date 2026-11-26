@@ -132,7 +132,7 @@ async function boot() {
   progress(1, 'Hazır');
 
   minimap = new Minimap($('#mmCanvas'), ed, engine);
-  window.__pp = { engine, env, ed };
+  window.__pp = { engine, env, ed, renderThumbs }; // renderThumbs: önizleme PNG'lerini yeniden üretmek için
   wireEditor();
   wireUI();
 
