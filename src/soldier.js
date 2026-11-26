@@ -355,6 +355,14 @@ export class Rig {
       rotWorld(spine1, up, 0.12);
     }
     // yukarı/aşağı nişan: gövde ve baş eğilir
+    // köşe açma: gövde ileri eksen etrafında yana yatar (en fazla ~18°)
+    const lean = s.lean || 0;
+    if (Math.abs(lean) > 0.001 && s.stance !== 'yuzustu') {
+      rotWorld(spine, back, -lean * 0.1);
+      rotWorld(spine1, back, -lean * 0.11);
+      rotWorld(spine2, back, -lean * 0.1);
+      rotWorld(neck, back, lean * 0.12); // baş dik kalsın
+    }
     const pitch = s.pitch || 0;
     if (s.stance !== 'yuzustu') {
       rotWorld(spine2, right, pitch * 0.45);

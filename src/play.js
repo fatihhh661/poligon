@@ -130,6 +130,7 @@ export class PlayMode {
     this.camPitch = -0.05;
     this.vel = V();
     this.stance = 'ayakta';
+    this.leanT = 0;
     this.aimT = 0;
     this.aiming = false;
     this.lastShot = -10;
@@ -165,6 +166,12 @@ export class PlayMode {
       if (!o) continue;
       if (it.type === 'hata') this.faults.push({ it, inside: false });
       if (skip.has(it.type)) continue;
+      if (it.type === 'kapi') {
+        // kapıdan geçilebilsin: yalnızca iki kasa dikmesi engel
+        const w = it.p?.w ?? 0.9;
+        for (const sx of [-1, 1]) this.colliders.push({ x: it.x, z: it.z, rot: it.rot || 0, cx: sx * (w / 2 + 0.04), cz: 0, hx: 0.05, hz: 0.05 });
+        continue;
+      }
       const body = o.getObjectByName('body');
       const r0 = o.rotation.y;
       o.rotation.y = 0;
@@ -360,6 +367,10 @@ export class PlayMode {
     st.aim = aimNow || now - this.lastShot < 0.7 || this.stance !== 'ayakta';
     st.pitch = st.aim ? this.camPitch : this.camPitch * 0.3;
     st.recoil = this.recoil;
+    // köşe açma: Q sola, E sağa (ölçülü eğilme)
+    const leanWant = running && this.stance !== 'yuzustu' && speed < 2.6 ? (k.e ? 1 : 0) - (k.q ? 1 : 0) : 0;
+    this.leanT += (leanWant - this.leanT) * (1 - Math.exp(-dt * 9));
+    st.lean = this.leanT;
     this.rig.group.position.copy(this.pos);
     this.rig.group.rotation.y = this.yaw;
     this.rig.update(dt);
@@ -371,12 +382,13 @@ export class PlayMode {
     const dist = this.stance === 'yuzustu' ? THREE.MathUtils.lerp(1.6, 0.8, this.aimT) : THREE.MathUtils.lerp(2.5, 0.95, this.aimT);
     const cp = Math.cos(this.camPitch), spp = Math.sin(this.camPitch);
     const dirF = V(-Math.sin(this.camYaw) * cp, spp, -Math.cos(this.camYaw) * cp);
-    const pivot = this.pos.clone().add(V(0, eye, 0)).addScaledVector(rgt, sh);
+    const pivot = this.pos.clone().add(V(0, eye - Math.abs(this.leanT) * 0.05, 0)).addScaledVector(rgt, sh + this.leanT * 0.38);
     const camPos = pivot.clone().addScaledVector(dirF, -dist);
     camPos.y = Math.max(0.25, camPos.y);
     if (this.state === 'intro') E.camera.position.copy(camPos);
     else E.camera.position.lerp(camPos, 1 - Math.exp(-dt * 20));
     E.camera.lookAt(pivot.clone().addScaledVector(dirF, 20));
+    E.camera.rotateZ(-this.leanT * 0.09);
     E.controls.target.copy(pivot);
     const fov = THREE.MathUtils.lerp(52, 30, this.aimT);
     if (Math.abs(E.camera.fov - fov) > 0.05) { E.camera.fov = fov; E.camera.updateProjectionMatrix(); }
@@ -636,7 +648,7 @@ export class PlayMode {
     // alt bilgi
     g.fillStyle = 'rgba(255,255,255,0.6)';
     g.font = font(600, 13);
-    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · C: diz · Z: yüzüstü · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
+    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · Z: yüzüstü · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
     g.textAlign = 'right';
     g.fillStyle = 'rgba(243,239,228,0.55)';
     g.font = font(700, 15);
@@ -673,6 +685,7 @@ export class PlayMode {
         <div><kbd>Fare</kbd> Bakış</div><div><kbd>Sağ tık</kbd> Nişan al</div>
         <div><kbd>Sol tık</kbd> Ateş</div><div><kbd>C</kbd> Diz çök</div>
         <div><kbd>Z</kbd> Yüzüstü</div><div><kbd>R</kbd> Video kaydı aç/kapa</div>
+        <div><kbd>Q</kbd> Sola köşe aç</div><div><kbd>E</kbd> Sağa köşe aç</div>
         <div><kbd>Enter</kbd> Parkuru bitir</div><div><kbd>Esc</kbd> Duraklat</div>
       </div>
       <div class="fld"><label>Silah</label><div class="seg" id="plSilah"><button data-a="tufek" class="${this.silah === 'tufek' ? 'on' : ''}">Tüfek</button><button data-a="tabanca" class="${this.silah === 'tabanca' ? 'on' : ''}">Tabanca</button></div></div>
