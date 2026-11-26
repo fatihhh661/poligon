@@ -87,6 +87,14 @@ export class Engine {
     if (q.ao) {
       this.aoPass = new GTAOPass(this.scene, this.camera, size.x, size.y);
       this.aoPass.output = GTAOPass.OUTPUT.Default;
+      // efekt sprite'ları, çizgiler ve saydam nesneler AO derinliğine girmesin (siyah kare sorunu)
+      this.aoPass.overrideVisibility = function () {
+        const cache = this._visibilityCache;
+        this.scene.traverse((o) => {
+          cache.set(o, o.visible);
+          if (o.isPoints || o.isLine || o.isSprite || o.isLine2 || o.isLineSegments2 || o.userData.noAO || (o.material && o.material.transparent)) o.visible = false;
+        });
+      };
       this.aoPass.blendIntensity = 0.9;
       this.aoPass.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.5, scale: 1 });
       this.composer.addPass(this.aoPass);

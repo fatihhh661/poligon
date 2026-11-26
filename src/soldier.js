@@ -332,14 +332,27 @@ export class Rig {
     const spine = B('Spine'), spine1 = B('Spine1'), spine2 = B('Spine2'), neck = B('Neck'), head = B('Head');
 
     if (s.stance === 'yuzustu') {
+      // nizami yüzüstü: gövde yerde, göğüs hafif kalkık, bacaklar düz ve hafif açık, ayak uçları içe/yere
       root.rotation.x = -Math.PI / 2;
-      root.position.set(0, 0.16, 0.85);
+      root.position.set(0, this.isMark ? 0.2 : 0.16, 0.92);
       g.updateMatrixWorld(true);
-      rotWorld(B('LeftUpLeg'), up, -0.18);
-      rotWorld(B('RightUpLeg'), up, 0.22);
-      rotWorld(spine2, right, 0.25);
-      rotWorld(neck, right, 0.55);
-      rotWorld(head, right, 0.35);
+      rotWorld(spine, right, 0.1);
+      rotWorld(spine1, right, 0.14);
+      rotWorld(spine2, right, 0.16);
+      rotWorld(neck, right, 0.35);
+      rotWorld(head, right, 0.25);
+      g.updateMatrixWorld(true);
+      // sürünme: bacaklar sırayla dizden yana çekilir, gövde hafif yuvarlanır
+      const cr = s.crawl || 0, ph = s.crawlPh || 0;
+      const kL = cr * Math.max(0, Math.sin(ph)), kR = cr * Math.max(0, -Math.sin(ph));
+      for (const [side, sx, k] of [['Left', -1, kL], ['Right', 1, kR]]) {
+        const foot = L(sx * (0.2 + k * 0.18), 0.09 + k * 0.02, 1.0 - k * 0.42);
+        const pole = L(sx * (0.25 + k * 0.6), 0.02 - (1 - k) * 0.5, 0.55);
+        twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), B(side + 'Foot'), foot, pole);
+        const fb = B(side + 'Foot'), toe = B(side + 'ToeBase');
+        if (fb && toe) pointBone(fb, toe, wpos(fb).add(L(0, -0.2, 0.08).sub(L(0, 0, 0))));
+      }
+      if (cr > 0.01) rotWorld(spine, back, Math.sin(ph) * 0.05 * cr);
     } else if (s.stance === 'diz') {
       root.position.y = -0.46;
       g.updateMatrixWorld(true);
@@ -383,7 +396,7 @@ export class Rig {
     } else {
       o.rotation.set(low ? pitch - 0.62 : pitch + rec * 0.08, low ? 0.45 : 0, 0);
       const butt = low ? V(sL.x - 0.02, hL.y - 0.32, sL.z - 0.12) : V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06 + rec * 0.05);
-      if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, sL.y + 0.02, sL.z - 0.05);
+      if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, Math.max(0.3, hL.y - 0.1), sL.z - 0.08);
       const dir = V(0, 0, -1).applyEuler(o.rotation);
       o.position.copy(butt).addScaledVector(dir, W.buttOffset);
     }
@@ -391,7 +404,7 @@ export class Rig {
     const gR = o.localToWorld(W.gripR.clone());
     const gL = o.localToWorld(W.gripL.clone());
     let poleR, poleL;
-    if (s.stance === 'yuzustu') { poleR = L(sL.x + 0.3, -0.5, sL.z - 0.2); poleL = L(sLl.x - 0.2, -0.5, sLl.z - 0.3); }
+    if (s.stance === 'yuzustu') { poleR = L(sL.x + 0.35, -0.8, sL.z - 0.1); poleL = L(sLl.x - 0.3, -0.8, sLl.z - 0.25); }
     else {
       poleR = L(sL.x + 0.6, sL.y - 0.5, sL.z + 0.1);
       poleL = this.silah === 'tabanca' ? L(sLl.x - 0.6, sLl.y - 0.5, sLl.z) : L(sLl.x - 0.1, sLl.y - 0.9, sLl.z - 0.2);

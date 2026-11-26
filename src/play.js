@@ -349,9 +349,12 @@ export class PlayMode {
     if (running && this.stance === 'ayakta') {
       f = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0);
       s = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0);
+    } else if (running && this.stance === 'yuzustu') {
+      // sürünme: yalnızca ileri/geri, yavaş
+      f = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0);
     }
-    const aimNow = this.aiming && running;
-    const sp = aimNow ? 1.1 : k.shift && f > 0 ? 4.8 : 1.75;
+    const aimNow = this.aiming && running && !(this.stance === 'yuzustu' && f !== 0);
+    const sp = this.stance === 'yuzustu' ? 0.55 : aimNow ? 1.1 : k.shift && f > 0 ? 4.8 : 1.75;
     const fwd = V(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const rgt = V(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     const want = fwd.clone().multiplyScalar(f).addScaledVector(rgt, s);
@@ -368,6 +371,9 @@ export class PlayMode {
     this.recoil = Math.max(0, this.recoil - dt * 6);
     const st = this.rig.state;
     st.stance = this.stance;
+    const crawling = this.stance === 'yuzustu' && this.vel.length() > 0.1;
+    st.crawl = THREE.MathUtils.lerp(st.crawl || 0, crawling ? 1 : 0, 1 - Math.exp(-dt * 8));
+    if (crawling) st.crawlPh = (st.crawlPh || 0) + dt * 5.5 * Math.sign(this.vel.dot(fwd) || 1);
     st.aim = aimNow || now - this.lastShot < 0.7 || this.stance !== 'ayakta';
     st.pitch = st.aim ? this.camPitch : this.camPitch * 0.3;
     st.recoil = this.recoil;
@@ -381,9 +387,9 @@ export class PlayMode {
 
     // kamera
     this.aimT += ((aimNow ? 1 : 0) - this.aimT) * (1 - Math.exp(-dt * 12));
-    const eye = this.stance === 'ayakta' ? 1.62 : this.stance === 'diz' ? 1.12 : 0.45;
+    const eye = this.stance === 'ayakta' ? 1.62 : this.stance === 'diz' ? 1.12 : 0.78;
     const sh = THREE.MathUtils.lerp(0.55, 0.46, this.aimT);
-    const dist = this.stance === 'yuzustu' ? THREE.MathUtils.lerp(1.6, 0.8, this.aimT) : THREE.MathUtils.lerp(2.5, 0.95, this.aimT);
+    const dist = this.stance === 'yuzustu' ? THREE.MathUtils.lerp(2.2, 1.0, this.aimT) : THREE.MathUtils.lerp(2.5, 0.95, this.aimT);
     const cp = Math.cos(this.camPitch), spp = Math.sin(this.camPitch);
     const dirF = V(-Math.sin(this.camYaw) * cp, spp, -Math.cos(this.camYaw) * cp);
     const pivot = this.pos.clone().add(V(0, eye - Math.abs(this.leanT) * 0.05, 0)).addScaledVector(rgt, sh + this.leanT * 0.38);
@@ -461,6 +467,7 @@ export class PlayMode {
   // ===================== atış =====================
   fire() {
     if (this.state !== 'run' || this.paused) return;
+    if (this.stance === 'yuzustu' && this.vel.length() > 0.1) return; // sürünürken ateş yok
     const now = performance.now() / 1000;
     if (now - this.lastShot < (this.silah === 'tabanca' ? 0.18 : 0.32)) return;
     this.lastShot = now;
@@ -652,7 +659,7 @@ export class PlayMode {
     // alt bilgi
     g.fillStyle = 'rgba(255,255,255,0.6)';
     g.font = font(600, 13);
-    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · Z: yüzüstü · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
+    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · Z: yüzüstü (W/S ile sürün) · R: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
     g.textAlign = 'right';
     g.fillStyle = 'rgba(243,239,228,0.55)';
     g.font = font(700, 15);
@@ -688,7 +695,7 @@ export class PlayMode {
         <div><kbd>W A S D</kbd> Hareket</div><div><kbd>Shift</kbd> Koşma</div>
         <div><kbd>Fare</kbd> Bakış</div><div><kbd>Sağ tık</kbd> Nişan al</div>
         <div><kbd>Sol tık</kbd> Ateş</div><div><kbd>C</kbd> Diz çök</div>
-        <div><kbd>Z</kbd> Yüzüstü</div><div><kbd>R</kbd> Video kaydı aç/kapa</div>
+        <div><kbd>Z</kbd> Yüzüstü (W/S sürünme)</div><div><kbd>R</kbd> Video kaydı aç/kapa</div>
         <div><kbd>Q</kbd> Sola köşe aç</div><div><kbd>E</kbd> Sağa köşe aç</div>
         <div><kbd>Enter</kbd> Parkuru bitir</div><div><kbd>Esc</kbd> Duraklat</div>
       </div>
