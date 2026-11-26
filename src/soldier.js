@@ -5,6 +5,7 @@ import { A } from './assets.js';
 // ----------------- yardımcılar -----------------
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const wpos = (o) => o.getWorldPosition(new THREE.Vector3());
+const smooth01 = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
 
 /** Kemiği, çocuğu hedef noktaya bakacak şekilde (dünya uzayında) döndür */
 function pointBone(bone, child, target) {
@@ -293,7 +294,15 @@ export class Rig {
     }
     if (this.isMark) this.setupCurl();
     this.weapon = silah === 'tabanca' ? pistolModel() : rifleModel();
-    if (this.weapon) this.group.add(this.weapon.obj);
+    if (this.weapon) {
+      this.group.add(this.weapon.obj);
+      if (this.weapon.mag) {
+        this.handMag = this.weapon.mag.clone();
+        this.handMag.matrixAutoUpdate = false;
+        this.handMag.visible = false;
+        this.group.add(this.handMag);
+      }
+    }
     this.update(0);
   }
 
@@ -384,12 +393,23 @@ export class Rig {
       rotWorld(B('RightFoot'), right, -0.9);
       rotWorld(spine, right, 0.12);
     } else if (this.isMark) {
-      rotWorld(spine, right, -0.05);
+      // taktik yürüyüş: hareket ederken dizler bükülür (ayaklar yerde kilitli), gövde hafif öne
+      const mv = Math.min(1, s.move || 0);
+      if (mv > 0.01) {
+        const fl = wpos(B('LeftFoot')), fr = wpos(B('RightFoot'));
+        root.position.y = -0.085 * mv;
+        g.updateMatrixWorld(true);
+        twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), fl, L(-0.12, 0.45, -1.3));
+        twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), fr, L(0.12, 0.45, -1.3));
+      }
+      rotWorld(spine, right, -0.05 + 0.12 * mv);
       rotWorld(spine1, up, 0.12);
     } else {
       rotWorld(spine, right, 0.06);
       rotWorld(spine1, up, 0.12);
     }
+    // geri tepme: dipçik omza vurur, üst gövde bir an geri itilir
+    if (s.recoil > 0.01 && s.stance !== 'yuzustu') rotWorld(spine2, right, -s.recoil * 0.07);
     // yukarı/aşağı nişan: gövde ve baş eğilir
     // köşe açma: gövde ileri eksen etrafında yana yatar (en fazla ~18°)
     const lean = s.lean || 0;
@@ -408,44 +428,144 @@ export class Rig {
     const W = this.weapon;
     if (!W) return;
     const sL = toL(wpos(B('RightArm'))), sLl = toL(wpos(B('LeftArm'))), hL = toL(wpos(head));
-    const low = !s.aim;
+    // nişan <-> hazır geçişi yumuşak
+    const want = s.aim ? 1 : 0;
+    this._ab = dt > 0 ? THREE.MathUtils.lerp(this._ab ?? want, want, 1 - Math.exp(-dt * 14)) : want;
+    const ab = this._ab, low = ab < 0.5, mv = Math.min(1, s.move || 0);
     const rec = s.recoil || 0;
     const o = W.obj;
+    const lr = THREE.MathUtils.lerp;
+    const u = s.reload ?? -1;
+    const renv = u >= 0 ? smooth01(u / 0.1) * (1 - smooth01((u - 0.88) / 0.12)) : 0;
+    const abW = Math.max(ab, renv); // şarjör değiştirirken tüfek göğüs hizasına kalkar
     if (this.silah === 'tabanca') {
-      o.rotation.set(low ? pitch - 0.7 : pitch + rec * 0.25, 0, 0);
-      const p = V((sL.x + sLl.x) / 2 + 0.03, hL.y - (low ? 0.42 : 0.06), hL.z - (low ? 0.38 : 0.62) + rec * 0.04);
+      o.rotation.set(lr(pitch - 0.7, pitch + rec * 0.3, abW), 0, 0);
+      const pLow = V((sL.x + sLl.x) / 2 + 0.03, hL.y - 0.42, hL.z - 0.38);
+      const pAim = V((sL.x + sLl.x) / 2 + 0.03, hL.y - 0.06, hL.z - 0.62 + rec * 0.05);
+      const p = pLow.lerp(pAim, abW);
       if (s.stance === 'yuzustu') p.set(0.03, 0.32, hL.z - 0.6);
       o.position.copy(p);
     } else {
-      o.rotation.set(low ? pitch - 0.62 : pitch + rec * 0.08, low ? 0.45 : 0, 0);
-      const butt = low ? V(sL.x - 0.02, hL.y - 0.32, sL.z - 0.12) : V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06 + rec * 0.05);
+      // hazır: duruyorken alçak hazır, yürürken sıkıştırılmış hazır (dipçik omuzda, namlu hafif aşağı)
+      const rxLow = pitch - lr(0.62, 0.28, mv), ryLow = lr(0.45, 0.1, mv);
+      o.rotation.set(lr(rxLow, pitch * (1 - renv), abW) + rec * 0.11, lr(ryLow, 0, abW), 0);
+      const bLow = V(sL.x - 0.02, hL.y - 0.32, sL.z - 0.12).lerp(V(sL.x - 0.06, hL.y - 0.2, sL.z - 0.07), mv);
+      const bAim = V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06);
+      const butt = bLow.lerp(bAim, abW);
       if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, Math.max(0.3, hL.y - 0.1), sL.z - 0.08);
+      butt.z += rec * 0.055; // dipçik omza geri vurur
       const dir = V(0, 0, -1).applyEuler(o.rotation);
       o.position.copy(butt).addScaledVector(dir, W.buttOffset);
     }
+    // şarjör değiştirme: dipçik koltuk altında, tüfek göğüs önünde sağa yatırılmış, namlu hafif yukarı
+    if (renv > 0) {
+      o.rotation.z += 0.62 * renv;
+      o.rotation.x += 0.22 * renv;
+      o.position.y -= 0.13 * renv;
+      o.position.z += 0.1 * renv;
+      o.position.x -= 0.05 * renv;
+    }
+    o.updateMatrix();
     g.updateMatrixWorld(true);
+    this.animBolt(rec, s.boltLocked && !(u > 0.92));
     const cr = s.stance === 'yuzustu' ? s.crawl || 0 : 0;
-    if (cr > 0.02) return this.crawlArms(cr, s.crawlPh || 0, sL, sLl, L, toL, up, right);
+    if (cr > 0.02) { this.updateMagVis(-1); return this.crawlArms(cr, s.crawlPh || 0, sL, sLl, L, toL, up, right); }
     const gR = o.localToWorld(W.gripR.clone());
-    const gL = o.localToWorld(W.gripL.clone());
+    let gL = o.localToWorld(W.gripL.clone());
+    if (u >= 0) { const hl0 = this.reloadHand(u, !!s.reloadEmpty, toL(gL), toL); this.lastHandL = hl0; gL = g.localToWorld(hl0.clone()); }
+    this.updateMagVis(u, !!s.reloadEmpty);
+    this.emitReload(u, !!s.reloadEmpty);
     let poleR, poleL;
     if (s.stance === 'yuzustu') { poleR = L(sL.x + 0.35, -0.8, sL.z - 0.1); poleL = L(sLl.x - 0.3, -0.8, sLl.z - 0.25); }
     else {
       poleR = L(sL.x + 0.6, sL.y - 0.5, sL.z + 0.1);
       poleL = this.silah === 'tabanca' ? L(sLl.x - 0.6, sLl.y - 0.5, sLl.z) : L(sLl.x - 0.1, sLl.y - 0.9, sLl.z - 0.2);
+      if (renv > 0) poleL = L(sLl.x - 0.5, sLl.y - 0.6, sLl.z + 0.1);
     }
-    if (this.silah !== 'tabanca' && !low) {
-      rotWorld(neck, back, -0.12);
-      rotWorld(head, right, 0.12);
+    if (this.silah !== 'tabanca' && ab > 0.5 && renv < 0.3) {
+      rotWorld(neck, back, -0.12 * ab);
+      rotWorld(head, right, 0.12 * ab);
     }
     twoBoneIK(B('RightArm'), B('RightForeArm'), B('RightHand'), gR, poleR);
     twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), gL, poleL);
     const fw = V(0, 0, -1).applyEuler(o.rotation).transformDirection(g.matrixWorld);
     const hr = wpos(B('RightHand')), hl = wpos(B('LeftHand'));
     pointBone(B('RightHand'), B('RightHandMiddle1'), hr.clone().addScaledVector(fw, 0.06).addScaledVector(up, -0.08).addScaledVector(right, -0.03));
-    pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
+    if (renv > 0.3) pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(up, 0.06).addScaledVector(fw, 0.05));
+    else pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
     this.curl('Right', 0.9);
-    this.curl('Left', this.silah === 'tabanca' ? 0.9 : 0.6);
+    this.curl('Left', renv > 0.3 ? 0.75 : this.silah === 'tabanca' ? 0.9 : 0.6);
+  }
+
+  // ---------- şarjör değiştirme ----------
+  /** Sol elin şarjör değiştirme yolu (grup uzayında). u: 0..1 */
+  reloadHand(u, empty, guard, toL) {
+    const W = this.weapon, o = W.obj;
+    const seat = W.magGrip.clone().applyMatrix4(o.matrix);
+    const down = V(0, -1, 0).applyQuaternion(o.quaternion);
+    const out = seat.clone().addScaledVector(down, 0.2);
+    const sp2 = toL(wpos(this.B('Spine2')));
+    const pouch = sp2.clone().add(V(-0.13, -0.2, -0.19));
+    const below = seat.clone().addScaledVector(down, 0.12);
+    const bolt = (W.boltRel || W.magGrip).clone().applyMatrix4(o.matrix);
+    const seg = (a, b, x0, x1) => a.clone().lerp(b, smooth01((u - x0) / (x1 - x0)));
+    if (u < 0.12) return seg(guard, seat, 0, 0.12);
+    if (u < 0.3) return seg(seat, out, 0.12, 0.3);
+    if (u < 0.5) return seg(out, pouch, 0.3, 0.5);
+    if (u < 0.72) return seg(pouch, below, 0.5, 0.72);
+    if (u < 0.84) return seg(below, seat, 0.72, 0.84);
+    if (empty) {
+      if (u < 0.91) return seg(seat, bolt, 0.84, 0.91);
+      return seg(bolt, guard, 0.93, 1.0);
+    }
+    return seg(seat, guard, 0.86, 1.0);
+  }
+
+  /** Tüfekteki şarjör ve eldeki şarjörün görünürlüğü/konumu */
+  updateMagVis(u, empty) {
+    const W = this.weapon;
+    if (!W || !W.mag || !this.handMag) return;
+    const inHand = u > 0.13 && u < 0.84;
+    W.mag.visible = !inHand && !W.magHidden;
+    const dropped = empty && u >= 0.3 && u < 0.45;
+    this.handMag.visible = inHand && !dropped;
+    if (!this.handMag.visible) return;
+    const o = W.obj;
+    const seatM = o.matrix.clone().multiply(W.magRel);
+    const pos = V(), q = new THREE.Quaternion(), sc = V();
+    seatM.decompose(pos, q, sc);
+    const hand = this.lastHandL || V();
+    const tilt = smooth01((u - 0.3) / 0.15) * (1 - smooth01((u - 0.58) / 0.14));
+    const q2 = q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), 0.9 * tilt));
+    const off = W.magGripMag.clone().multiply(sc).applyQuaternion(q2);
+    this.handMag.matrix.compose(hand.clone().sub(off), q2, sc);
+    this.handMag.matrixWorldNeedsUpdate = true;
+  }
+
+  emitReload(u, empty) {
+    const prev = this._ru ?? -1;
+    this._ru = u;
+    if (!this.onEvent || u < 0 || u < prev) return;
+    const evs = [[0.17, 'magOut'], [0.3, empty ? 'magDrop' : null], [0.53, 'pouch'], [0.83, 'magIn'], [0.92, empty ? 'bolt' : null]];
+    for (const [th, name] of evs) if (name && prev < th && u >= th) this.onEvent(name, this);
+  }
+
+  /** Sürgü: her atışta geri gidip gelir; son mermide açık kalır */
+  animBolt(rec, locked) {
+    const W = this.weapon;
+    if (!W || !W.bolt) return;
+    const cyc = rec > 0.5 ? (1 - rec) * 2 : rec * 2;
+    W.bolt.position.copy(W.boltRest).addScaledVector(W.boltDir, locked ? 1 : cyc);
+  }
+
+  /** Kovan atma noktası ve yönü (dünya) */
+  ejectInfo() {
+    const W = this.weapon;
+    if (!W) return null;
+    const p = W.obj.localToWorld((W.eject || V(0.02, 0.02, 0)).clone());
+    const r = V(1, 0, 0).transformDirection(W.obj.matrixWorld);
+    const f = V(0, 0, -1).transformDirection(W.obj.matrixWorld);
+    return { p, r, f };
   }
 
   /**
@@ -566,13 +686,35 @@ function m4Model() {
   inner.rotation.y = Math.PI; // namlu -Z (ileri), dipçik +Z
   const obj = new THREE.Group();
   obj.add(inner);
-  return {
+  obj.updateMatrixWorld(true);
+  const W = {
     obj,
     buttOffset: L / 2,
     gripR: V(0, -0.065, 0.21),
     gripL: V(-0.01, -0.005, -0.12),
     muzzle: V(0, 0.03, -L / 2),
   };
+  const inv = obj.matrixWorld.clone().invert();
+  const boxIn = (mesh) => { mesh.geometry.computeBoundingBox(); return mesh.geometry.boundingBox.clone().applyMatrix4(inv.clone().multiply(mesh.matrixWorld)); };
+  let mag = null, bolt = null;
+  m.traverse((o) => { if (o.isMesh && /Magazine/i.test(o.name + (o.parent?.name || ''))) mag = o; if (o.isMesh && /BoltCarrier/i.test(o.name + (o.parent?.name || ''))) bolt = o; });
+  if (mag) {
+    W.mag = mag;
+    W.magRel = inv.clone().multiply(mag.matrixWorld);
+    const mb = boxIn(mag), mc = mb.getCenter(V());
+    W.magGrip = V(mc.x, mb.min.y + 0.05, mc.z);
+    W.magGripMag = W.magGrip.clone().applyMatrix4(W.magRel.clone().invert()); // şarjörün kendi uzayında, ölçeksiz
+    W.boltRel = V(mb.min.x - 0.012, mb.max.y + 0.012, mc.z - 0.01); // sürgü kilit/bırakma mandalı (sol yanda)
+  } else W.magGrip = V(0, -0.12, 0.05);
+  if (bolt) {
+    W.bolt = bolt;
+    W.boltRest = bolt.position.clone();
+    const pm = bolt.parent.matrixWorld.clone().invert().multiply(obj.matrixWorld);
+    W.boltDir = V(0, 0, 0.065).applyMatrix3(new THREE.Matrix3().setFromMatrix4(pm));
+    const bb = boxIn(bolt), bc = bb.getCenter(V());
+    W.eject = V(bb.max.x + 0.006, bc.y + 0.006, bc.z);
+  } else W.eject = V(0.025, 0.02, 0.03);
+  return W;
 }
 
 function rifleModel() {
@@ -636,5 +778,14 @@ function pistolModel() {
   }
   inner.rotation.y = Math.PI / 2; // namlu ileri
   obj.add(inner);
-  return { obj, buttOffset: 0, gripR: V(0, -0.05, 0.05), gripL: V(-0.035, -0.06, 0.04), muzzle: V(0, 0.03, -0.16) };
+  // tabanca şarjörü (kabza içinde): elde taşınacak basit şarjör modeli
+  const magMesh = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.11, 0.034), new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.55, metalness: 0.4 }));
+  magMesh.visible = false;
+  obj.add(magMesh);
+  const magRel = new THREE.Matrix4().makeTranslation(0, -0.07, 0.045);
+  return {
+    obj, buttOffset: 0, gripR: V(0, -0.05, 0.05), gripL: V(-0.035, -0.06, 0.04), muzzle: V(0, 0.03, -0.16),
+    mag: magMesh, magHidden: true, magRel, magGrip: V(0, -0.11, 0.045), magGripMag: V(0, -0.04, 0), eject: V(0.012, 0.035, -0.02),
+    boltRel: V(-0.015, 0.0, 0.0),
+  };
 }
