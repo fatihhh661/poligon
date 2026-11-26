@@ -32,6 +32,7 @@ export async function loadAssets(renderer, onProgress = () => {}) {
       A.pbr[k] = { map, normalMap, arm };
     });
   }
+  jobs.push(async () => { try { A.mocap = await (await fetch('assets/anim/mocap.json')).json(); } catch (e) { A.mocap = null; } });
   jobs.push(async () => { A.tex.branch = await tex('assets/tex/branch.png'); });
   jobs.push(async () => { A.tex.twigNor = await tex('assets/tex/twig_nor.jpg', false); });
   jobs.push(async () => { A.tex.bark = await tex('assets/tex/bark_diff.jpg'); });

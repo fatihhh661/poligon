@@ -152,6 +152,11 @@ export class PlayMode {
     this.vel = V();
     this.stance = 'ayakta';
     this.leanT = 0;
+    this.lowYaw = this.yaw;
+    this.turning = false;
+    this.exert = 0;
+    this.turnVel = 0;
+    this._prevYaw = this.yaw;
     this.aimT = 0;
     this.aiming = false;
     this.lastShot = -10;
@@ -398,7 +403,7 @@ export class PlayMode {
       f = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0);
     }
     const aimNow = this.aiming && running && !(this.stance === 'yuzustu' && f !== 0) && this.reloadU < 0;
-    const sp = this.stance === 'yuzustu' ? 0.55 : aimNow ? 1.1 : k.shift && f > 0 ? 4.8 : 1.75;
+    const sp = this.stance === 'yuzustu' ? 0.55 : aimNow ? 1.0 : k.shift && f > 0 && s === 0 ? 4.2 : k.shift && f > 0 ? 3.0 : f < 0 ? 1.15 : f === 0 && s !== 0 ? 1.3 : 1.6;
     const fwd = V(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const rgt = V(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     const want = fwd.clone().multiplyScalar(f).addScaledVector(rgt, s);
@@ -411,9 +416,34 @@ export class PlayMode {
     // karakter yönü
     if (speed > 0.2 || aimNow || now - this.lastShot < 0.8 || running) this.yaw = angLerp(this.yaw, this.camYaw, 1 - Math.exp(-dt * 12));
     if (this.view === 'fps') this.yaw = this.camYaw; // 1. şahısta gövde ve silah bakışla tam hizalı
+    // alt gövde (bacaklar) ayrı döner: yürürken bakışa hizalanır, dururken üst gövde önce döner,
+    // fark büyüyünce asker ayak değiştirerek yerinde döner
+    const tw0 = Math.atan2(Math.sin(this.yaw - this.lowYaw), Math.cos(this.yaw - this.lowYaw));
+    let turnStep = 0;
+    if (speed > 0.3 || this.stance === 'yuzustu') { this.lowYaw = angLerp(this.lowYaw, this.yaw, 1 - Math.exp(-dt * 10)); this.turning = false; }
+    else {
+      if (Math.abs(tw0) > (aimNow ? 0.55 : 1.05)) this.turning = true;
+      if (this.turning) {
+        const prev = this.lowYaw;
+        this.lowYaw = angLerp(this.lowYaw, this.yaw, 1 - Math.exp(-dt * 6));
+        turnStep = Math.abs(Math.atan2(Math.sin(this.lowYaw - prev), Math.cos(this.lowYaw - prev))) / Math.max(dt, 1e-3);
+        if (Math.abs(tw0) < 0.06) this.turning = false;
+      }
+    }
+    const twist = Math.atan2(Math.sin(this.yaw - this.lowYaw), Math.cos(this.yaw - this.lowYaw));
+    const dy = Math.atan2(Math.sin(this.yaw - this._prevYaw), Math.cos(this.yaw - this._prevYaw));
+    this._prevYaw = this.yaw;
+    this.turnVel += (dy / Math.max(dt, 1e-3) - this.turnVel) * (1 - Math.exp(-dt * 12));
+    const sprinting = k.shift && f > 0 && speed > 2.6 && this.state === 'run';
+    this.exert = clamp(this.exert + dt * (sprinting ? 0.22 : speed > 1 ? 0.02 : -0.07), 0, 1);
+    // hareket yönü (bacaklara göre): 0 ileri, +90 sol, 180 geri
+    const lf = V(-Math.sin(this.lowYaw), 0, -Math.cos(this.lowYaw)), ll = V(-Math.cos(this.lowYaw), 0, Math.sin(this.lowYaw));
+    const moveAng = speed > 0.05 ? (Math.atan2(this.vel.dot(ll), this.vel.dot(lf)) * 180) / Math.PI : 0;
+    const locoSpeed = this.stance === 'ayakta' ? Math.max(speed, Math.min(0.9, turnStep * 0.35)) : speed;
     const fwdComp = this.vel.dot(fwd);
     const mvs = fwdComp < -0.2 && Math.abs(this.vel.dot(rgt)) < 0.5 ? -speed : speed;
     this.rig.setMove(mvs);
+    Object.assign(this.rig.state, { locoSpeed, locoAng: turnStep > 0.05 && speed < 0.3 ? 0 : moveAng, twist, exert: this.exert, turnVel: this.turnVel, groundY: 0.015 });
     // şarjör değiştirme ilerlemesi
     if (this.reloadU >= 0 && running) {
       this.reloadU += dt / this.reloadDur;
@@ -444,11 +474,12 @@ export class PlayMode {
     this.leanT += (leanWant - this.leanT) * (1 - Math.exp(-dt * 9));
     st.lean = this.leanT;
     this.rig.group.position.copy(this.pos);
-    this.rig.group.rotation.y = this.yaw;
+    this.rig.group.rotation.y = this.rig.mocap ? this.lowYaw : this.yaw;
+    if (!this.rig.mocap) this.rig.state.twist = 0;
     this.rig.update(dt);
     if (running && this.elapsed - (this._lastSnap ?? -1) >= 1 / 60) {
       this._lastSnap = this.elapsed;
-      this.recData.snaps.push([this.elapsed, this.pos.x, this.pos.z, this.yaw, this.camYaw, this.camPitch, STANCES.indexOf(this.stance), this.aimT, st.aim ? 1 : 0, st.pitch, this.leanT, st.crawl || 0, st.crawlPh || 0, mvs, this.recoil, this.reloadU, this.reloadEmpty ? 1 : 0, this.boltLocked ? 1 : 0, st.move]);
+      this.recData.snaps.push([this.elapsed, this.pos.x, this.pos.z, this.yaw, this.camYaw, this.camPitch, STANCES.indexOf(this.stance), this.aimT, st.aim ? 1 : 0, st.pitch, this.leanT, st.crawl || 0, st.crawlPh || 0, mvs, this.recoil, this.reloadU, this.reloadEmpty ? 1 : 0, this.boltLocked ? 1 : 0, st.move, this.lowYaw, st.twist || 0, st.locoSpeed || 0, st.locoAng || 0, this.exert, this.turnVel]);
     }
 
     // kamera
@@ -921,6 +952,7 @@ export class PlayMode {
       x: L(1), z: L(2), yaw: angLerp(a[3], b[3], f), cy: angLerp(a[4], b[4], f), cp: L(5), st: STANCES[a[6]] || 'ayakta',
       aimT: L(7), aim: a[8] > 0.5, pitch: L(9), lean: L(10), cr: L(11), ph: L(12), mvs: L(13), rec: L(14),
       rl: a[15] >= 0 && b[15] >= 0 ? L(15) : a[15], re: a[16] > 0.5, bl: a[17] > 0.5, mv: L(18),
+      lowYaw: a.length > 19 ? angLerp(a[19], b[19], f) : null, tw: a.length > 19 ? L(20) : 0, ls: a.length > 19 ? L(21) : Math.abs(L(13)), la: a.length > 19 ? a[22] : 0, ex: a.length > 19 ? L(23) : 0, tv: a.length > 19 ? L(24) : 0,
     };
   }
 
@@ -942,8 +974,9 @@ export class PlayMode {
     const r = this.rig, st = r.state;
     Object.assign(st, { stance: s.st, aim: s.aim, pitch: s.pitch, lean: s.lean, crawl: s.cr, crawlPh: s.ph, recoil: s.rec, reload: s.rl, reloadEmpty: s.re, boltLocked: s.bl, move: s.mv });
     r.group.position.set(s.x, 0, s.z);
-    r.group.rotation.y = s.yaw;
+    r.group.rotation.y = r.mocap && s.lowYaw != null ? s.lowYaw : s.yaw;
     r.setMove(s.mvs);
+    Object.assign(st, { locoSpeed: s.ls, locoAng: s.la, twist: r.mocap ? s.tw : 0, exert: s.ex, turnVel: s.tv, groundY: 0.015 });
     r.update(Math.max(0.0001, dt * sp));
     this.replayCamera(s, dt);
     this.visualFx(dt * Math.max(sp, 0.0001), now);

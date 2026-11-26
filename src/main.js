@@ -612,7 +612,7 @@ function openAbout() {
     title: 'Poligon Pro Hakkında', ikon: 'info', width: 600,
     body: `<div class="about"><p><b style="font:700 20px var(--head);letter-spacing:.1em">POLİGON <span style="color:var(--accent)">PRO</span></b> · Sürüm 1.0</p>
       <p>Atış parkurlarını sahaya gitmeden önce 3D ortamda tasarlamak, mesafeleri ölçmek, emniyet kontrolü yapmak ve personele sunmak için geliştirilmiş masaüstü programı.</p>
-      <p style="font-size:12px;color:var(--muted)">Asker modeli: "Soldier Full Tactical Gear" – DanlyVostok (CC BY 4.0, Sketchfab). Tüfek: "Classic M4" – jeandiz (CC BY 4.0, Sketchfab). Dokular, gökyüzleri ve çevre modelleri: Poly Haven (CC0). Animasyon iskeleti: three.js örnekleri.</p>
+      <p style="font-size:12px;color:var(--muted)">Asker modeli: "Soldier Full Tactical Gear" – DanlyVostok (CC BY 4.0, Sketchfab). Tüfek: "Classic M4" – jeandiz (CC BY 4.0, Sketchfab). Dokular, gökyüzleri ve çevre modelleri: Poly Haven (CC0). Hareket kayıtları: Carnegie Mellon Üniversitesi Hareket Yakalama Veritabanı (mocap.cs.cmu.edu), BVH dönüşümü: B. Hahne.</p>
       <p>Program tamamen <b>çevrimdışı</b> çalışır; hiçbir veri internete gönderilmez. Parkurlar bilgisayarınızda <b>.parkur</b> dosyası olarak saklanır.</p>
       <div class="sec-title" style="margin-top:16px">KLAVYE VE FARE</div>${KEYS}</div>`,
   });

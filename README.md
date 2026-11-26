@@ -46,3 +46,6 @@ Araç çubuğundaki **Uygulama Modu** (veya `P`) ile asker başlangıç noktası
 
 ### Mixamo ile daha gerçekçi asker (isteğe bağlı)
 mixamo.com'dan (ücretsiz Adobe hesabı) bir asker karakteri (FBX, With Skin) ve tüfekli yürüme/koşma/nişan/ateş animasyonları (FBX, Without Skin, In Place) indirip depodaki `modeller/` klasörüne yükleyin; program bunlarla güncellenecektir.
+
+### Hareket kayıtları (mocap)
+Asker hareketleri CMU Hareket Yakalama Veritabanı'ndan (ticari kullanım dahil serbest) alınır. `dist/mocap/*.bvh` dosyalarından döngüsel, yerinde klipler üretmek için: `node scripts/prep-mocap.mjs` → `app/assets/anim/mocap.json`.

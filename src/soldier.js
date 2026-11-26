@@ -186,9 +186,31 @@ function restPose(root) {
  * Animasyonu farklı dinlenme pozuna sahip iskelete aktarır (dünya yönü hizalama + rotasyon farkı).
  */
 const retargetCache = {};
-function retargetClips(tgtSrcModel) {
-  if (retargetCache.done) return retargetCache.clips;
-  const S = skClone(A.models.soldier), T = skClone(tgtSrcModel);
+/** CMU hareket kaydı iskeleti (BVH hiyerarşisi) ve klipleri */
+function mocapSource() {
+  const M = A.mocap;
+  const bones = M.hierarchy.map((h) => { const b = new THREE.Bone(); b.name = h.n; b.position.fromArray(h.o); return b; });
+  M.hierarchy.forEach((h, i) => { if (h.p >= 0) bones[h.p].add(bones[i]); });
+  bones[0].position.set(0, M.clips.Idle.hp[1], 0); // dinlenme kalça yüksekliği
+  const holder = new THREE.Group();
+  holder.rotation.y = Math.PI; // kayıtlar +Z'ye bakıyor; asker -Z'ye
+  holder.add(bones[0]);
+  const clips = Object.entries(M.clips).map(([name, c]) => {
+    const N = c.hp.length / 3;
+    const times = new Float32Array(N).map((_, k) => (k / (N - 1)) * c.dur);
+    const tracks = Object.entries(c.q).map(([bn, q]) => new THREE.QuaternionKeyframeTrack(bn + '.quaternion', times, q));
+    tracks.push(new THREE.VectorKeyframeTrack(bones[0].name + '.position', times, c.hp));
+    const clip = new THREE.AnimationClip(name, c.dur, tracks);
+    clip.userData = { speed: c.speed, stride: c.stride, ph0: c.ph0, ang: c.ang };
+    return clip;
+  });
+  return { S: holder, clips };
+}
+
+function retargetClips(tgtSrcModel, srcObj = null, srcClips = null, key = 'soldier') {
+  const cache = (retargetCache[key] ||= {});
+  if (cache.done) return cache.clips;
+  const S = srcObj || skClone(A.models.soldier), T = skClone(tgtSrcModel);
   const holder = new THREE.Group();
   holder.add(S, T);
   restPose(S); restPose(T);
@@ -212,7 +234,7 @@ function retargetClips(tgtSrcModel) {
   const tHipLocal0 = tb.Hips.position.clone();
   const tOrder = order.filter((n) => names.includes(n));
   const clips = [];
-  for (const clip of A.anims.soldier) {
+  for (const clip of srcClips || A.anims.soldier) {
     const mixer = new THREE.AnimationMixer(S);
     const act = mixer.clipAction(clip);
     act.play();
@@ -244,10 +266,12 @@ function retargetClips(tgtSrcModel) {
     }
     const tracks = tOrder.map((n) => new THREE.QuaternionKeyframeTrack(`${tb[n].name}.quaternion`, times, qv[n]));
     tracks.push(new THREE.VectorKeyframeTrack(`${tb.Hips.name}.position`, times, pv));
-    clips.push(new THREE.AnimationClip(clip.name, clip.duration, tracks));
+    const out = new THREE.AnimationClip(clip.name, clip.duration, tracks);
+    out.userData = clip.userData || {};
+    clips.push(out);
   }
-  retargetCache.done = true;
-  retargetCache.clips = clips;
+  cache.done = true;
+  cache.clips = clips;
   return clips;
 }
 
@@ -281,11 +305,34 @@ export class Rig {
     this.B = (n) => bones[n];
     this.mixer = new THREE.AnimationMixer(root);
     this.actions = {};
-    const clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
+    let clips;
+    if (this.isMark && A.mocap) {
+      const src = mocapSource();
+      clips = retargetClips(mark, src.S, src.clips, 'mocap');
+      this.mocap = true;
+    } else clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
     for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);
-    this.cur = this.actions.Idle || null;
-    if (this.cur) this.cur.play();
-    this.mixer.update(0);
+    if (this.mocap) {
+      this.loco = { phase: 0, idleT: Math.random() * this.actions.Idle.getClip().duration, w: {} };
+      for (const [n, a] of Object.entries(this.actions)) { a.play(); a.timeScale = 0; a.setEffectiveWeight(n === 'Idle' ? 1 : 0); this.loco.w[n] = n === 'Idle' ? 1 : 0; }
+      this.cur = this.actions.Idle;
+      this.mixer.update(0);
+      // nişan anında üst gövdeyi sabitlemek için nötr duruş
+      this.neutral = {};
+      for (const n of ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head']) if (this.B(n)) this.neutral[n] = this.B(n).quaternion.clone();
+      this.ankleH = 0.085;
+      // yelek cepleri: yaylı (fizikli) kemikler
+      this.jiggle = [];
+      root.traverse((o) => {
+        if (!o.isBone || !/Pouch/i.test(o.name) || !o.children.length) return;
+        const c = o.children.find((x) => x.isBone);
+        if (c) this.jiggle.push({ b: o, c, q0: o.quaternion.clone(), p: null, v: V() });
+      });
+    } else {
+      this.cur = this.actions.Idle || null;
+      if (this.cur) this.cur.play();
+      this.mixer.update(0);
+    }
     // parmakların temel dönüşleri
     this.fingerBase = {};
     for (const side of ['Right', 'Left']) {
@@ -309,6 +356,7 @@ export class Rig {
   /** Hareket animasyonunu seç: hız (m/sn), geri yürüyüş için negatif */
   setMove(speed) {
     if (!this.mixer) return;
+    if (this.mocap) { this.state.locoSpeed = Math.abs(speed); this.state.locoAng = speed < -0.15 ? 180 : 0; return; }
     const a = Math.abs(speed);
     const st = this.state.stance;
     let want = 'Idle', ts = 1;
@@ -326,10 +374,50 @@ export class Rig {
     if (this.cur) this.cur.timeScale = ts;
   }
 
+  /** Hareket karıştırma: hıza ve yöne göre 6 gerçek hareket kaydı, adım fazı senkronlu */
+  stepLoco(dt) {
+    const s = this.state, L = this.loco, A_ = this.actions;
+    const sp = s.stance === 'ayakta' ? s.locoSpeed || 0 : 0;
+    const a = ((s.locoAng || 0) * Math.PI) / 180;
+    const locoW = smooth01(sp / 0.45);
+    let wF = Math.max(0, Math.cos(a)), wB = Math.max(0, -Math.cos(a)), wL = Math.max(0, Math.sin(a)), wR = Math.max(0, -Math.sin(a));
+    const sum = wF + wB + wL + wR || 1;
+    wF /= sum; wB /= sum; wL /= sum; wR /= sum;
+    const runK = smooth01((sp - 2.3) / 1.3);
+    const tgt = { Idle: 1 - locoW, Walk: locoW * wF * (1 - runK), Run: locoW * wF * runK, WalkBack: locoW * wB, StrafeL: locoW * wL, StrafeR: locoW * wR };
+    const k = dt > 0 ? 1 - Math.exp(-dt * 9) : 1;
+    let strideSum = 0, wsum = 0;
+    for (const n in tgt) {
+      if (!A_[n]) continue;
+      L.w[n] += (tgt[n] - L.w[n]) * k;
+      A_[n].setEffectiveWeight(L.w[n]);
+      if (n !== 'Idle') {
+        const u = A_[n].getClip().userData;
+        const kk = Math.min(1.6, Math.max(0.85, Math.sqrt(sp / Math.max(0.2, u.speed))));
+        strideSum += L.w[n] * u.stride * kk; wsum += L.w[n];
+      }
+    }
+    if (wsum > 0.001 && sp > 0.02) L.phase = (L.phase + (sp * dt) / (strideSum / wsum)) % 1;
+    for (const n in tgt) {
+      const act = A_[n];
+      if (!act) continue;
+      const c = act.getClip();
+      if (n === 'Idle') { L.idleT = (L.idleT + dt) % c.duration; act.time = L.idleT; }
+      else act.time = ((L.phase + c.userData.ph0) % 1) * c.duration;
+    }
+    this.mixer.update(0);
+  }
+
   update(dt) {
     if (!this.root) return;
     const g = this.group, root = this.root, B = this.B, s = this.state;
-    this.mixer.update(dt);
+    if (this.mocap) this.stepLoco(dt); else this.mixer.update(dt);
+    // nişan alınca üst gövde sabitlenir (yürürken omuzlar sallanmaz)
+    if (this.mocap && this.neutral) {
+      const ab0 = this._ab ?? (s.aim ? 1 : 0);
+      const k = s.stance === 'ayakta' ? 0.75 * ab0 : 0.9;
+      if (k > 0) for (const n in this.neutral) B(n).quaternion.slerp(this.neutral[n], n === 'Spine' ? k * 0.5 : k);
+    }
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
     g.updateMatrixWorld(true);
@@ -408,6 +496,32 @@ export class Rig {
       rotWorld(spine, right, 0.06);
       rotWorld(spine1, up, 0.12);
     }
+    // ayak-zemin: ayaklar zeminin altına girmez
+    if (this.mocap && s.stance === 'ayakta') {
+      g.updateMatrixWorld(true);
+      const gy = (s.groundY ?? 0.015) + this.ankleH;
+      for (const [side, sx] of [['Left', -1], ['Right', 1]]) {
+        const f = B(side + 'Foot'), fp = wpos(f);
+        if (fp.y < gy) { fp.y = gy; twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), f, fp, L(sx * 0.12, 0.5, -1.3)); }
+      }
+    }
+    // üst gövde burulması: bakış yönü ile bacak yönü arasındaki fark omurgaya dağıtılır (omuz önce döner)
+    const tw = Math.max(-1.25, Math.min(1.25, s.twist || 0));
+    if (Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') {
+      rotWorld(spine, up, tw * 0.22);
+      rotWorld(spine1, up, tw * 0.3);
+      rotWorld(spine2, up, tw * 0.3);
+      rotWorld(neck, up, tw * 0.18);
+    }
+    // nefes: göğüs ve omuzlar; efor arttıkça hızlanır ve derinleşir
+    if (this.mocap && dt > 0) {
+      const ex = Math.min(1, s.exert || 0);
+      this._bt = (this._bt || 0) + dt * (1.45 + ex * 2.7);
+      const br = Math.sin(this._bt), amp = 0.011 + 0.03 * ex;
+      rotWorld(spine2, right, -br * amp);
+      if (B('LeftShoulder')) rotWorld(B('LeftShoulder'), back, br * amp * 0.7);
+      if (B('RightShoulder')) rotWorld(B('RightShoulder'), back, -br * amp * 0.7);
+    }
     // geri tepme: dipçik omza vurur, üst gövde bir an geri itilir
     if (s.recoil > 0.01 && s.stance !== 'yuzustu') rotWorld(spine2, right, -s.recoil * 0.07);
     // yukarı/aşağı nişan: gövde ve baş eğilir
@@ -454,8 +568,41 @@ export class Rig {
       const butt = bLow.lerp(bAim, abW);
       if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, Math.max(0.3, hL.y - 0.1), sL.z - 0.08);
       butt.z += rec * 0.055; // dipçik omza geri vurur
+      if (Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') butt.sub(sL).applyAxisAngle(V(0, 1, 0), tw).add(sL);
+      o.rotation.y += s.stance !== 'yuzustu' ? tw : 0;
       const dir = V(0, 0, -1).applyEuler(o.rotation);
       o.position.copy(butt).addScaledVector(dir, W.buttOffset);
+    }
+    if (this.silah === 'tabanca' && Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') {
+      o.position.sub(hL).applyAxisAngle(V(0, 1, 0), tw).add(hL);
+      o.rotation.y += tw;
+    }
+    if (this.mocap && dt > 0) {
+      // el titremesi / salınım (nişanda çok az), efor arttıkça artar
+      const t = (this._swT = (this._swT || 0) + dt), ex = Math.min(1, s.exert || 0);
+      const nx = Math.sin(t * 1.31) + 0.5 * Math.sin(t * 2.73 + 1.3) + 0.25 * Math.sin(t * 5.1 + 0.4);
+      const ny = Math.sin(t * 1.07 + 0.7) + 0.5 * Math.sin(t * 2.29 + 2.1) + 0.25 * Math.sin(t * 4.7 + 1.9);
+      const ar = lr(0.022, 0.0035, abW) * (1 + ex * 1.8);
+      o.rotation.x += ny * ar * 0.6;
+      o.rotation.y += nx * ar;
+      // adım sallantısı
+      const sp = s.stance === 'ayakta' ? Math.min(1, (s.locoSpeed || 0) / 1.6) : 0, ph = (this.loco?.phase || 0) * Math.PI * 2;
+      const bk = sp * lr(1, 0.35, abW) * (1 + (s.locoSpeed > 2.6 ? 1.2 : 0));
+      o.position.y += Math.sin(ph * 2) * 0.011 * bk;
+      o.position.x += Math.sin(ph) * 0.009 * bk;
+      o.rotation.z += Math.sin(ph) * 0.03 * bk;
+      // dönüş ataleti: hızlı dönüşte tüfek bir an geride kalır
+      const want = Math.max(-0.11, Math.min(0.11, -(s.turnVel || 0) * 0.03)) * lr(1, 0.45, abW);
+      const S_ = (this._lag ||= { x: 0, v: 0 });
+      // kararlı yay: küçük alt adımlarla (uzun karelerde patlamaz)
+      for (let left = Math.min(dt, 0.25); left > 1e-6; left -= 1 / 120) {
+        const h = Math.min(left, 1 / 120);
+        S_.v += ((want - S_.x) * 160 - S_.v * 22) * h;
+        S_.x += S_.v * h;
+      }
+      if (!Number.isFinite(S_.x)) { S_.x = 0; S_.v = 0; }
+      o.rotation.y += S_.x;
+      o.position.x += S_.x * 0.12;
     }
     // şarjör değiştirme: dipçik koltuk altında, tüfek göğüs önünde sağa yatırılmış, namlu hafif yukarı
     if (renv > 0) {
@@ -495,6 +642,27 @@ export class Rig {
     else pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
     this.curl('Right', 0.9);
     this.curl('Left', renv > 0.3 ? 0.75 : this.silah === 'tabanca' ? 0.9 : 0.6);
+    this.simJiggle(dt);
+  }
+
+  /** Yelek cepleri ve askılar: yay-sönüm simülasyonu (adımlarla sallanır, yerçekimiyle sarkar) */
+  simJiggle(dt) {
+    if (!this.jiggle?.length) return;
+    this.group.updateMatrixWorld(true);
+    const sdt = Math.min(dt, 1 / 30);
+    for (const j of this.jiggle) {
+      j.b.quaternion.copy(j.q0);
+      j.b.updateMatrixWorld(true);
+      const tgt = wpos(j.c), base = wpos(j.b);
+      if (!j.p || sdt <= 0) { j.p = tgt.clone(); j.v.set(0, 0, 0); continue; }
+      const len = tgt.distanceTo(base);
+      j.v.addScaledVector(tgt.clone().sub(j.p), 260 * sdt).multiplyScalar(Math.exp(-11 * sdt));
+      j.v.y -= 1.2 * sdt;
+      j.p.addScaledVector(j.v, sdt);
+      j.p.sub(base).setLength(len).add(base);
+      if (j.p.distanceTo(tgt) > len * 0.6) j.p.copy(tgt);
+      pointBone(j.b, j.c, j.p);
+    }
   }
 
   // ---------- şarjör değiştirme ----------
