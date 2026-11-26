@@ -431,7 +431,7 @@ export class Rig {
     // nişan <-> hazır geçişi yumuşak
     const want = s.aim ? 1 : 0;
     this._ab = dt > 0 ? THREE.MathUtils.lerp(this._ab ?? want, want, 1 - Math.exp(-dt * 14)) : want;
-    const ab = this._ab, low = ab < 0.5, mv = Math.min(1, s.move || 0);
+    const ab = this._ab, low = ab < 0.5, mv = Math.max(Math.min(1, s.move || 0), s.ready || 0);
     const rec = s.recoil || 0;
     const o = W.obj;
     const lr = THREE.MathUtils.lerp;
@@ -556,6 +556,29 @@ export class Rig {
     if (!W || !W.bolt) return;
     const cyc = rec > 0.5 ? (1 - rec) * 2 : rec * 2;
     W.bolt.position.copy(W.boltRest).addScaledVector(W.boltDir, locked ? 1 : cyc);
+  }
+
+  /** 1. şahısta baş/kask/gözlük gizlenir (kamera içinden geçmesin), gövde görünür kalır */
+  setFirstPerson(on) {
+    if (this._fp === on || !this.root) return;
+    this._fp = on;
+    this.root.traverse((o) => { if (o.isMesh && /Head|Helmet|Eye|Glus|visor/i.test((o.material?.name || '') + o.name)) o.visible = !on; });
+  }
+
+  /** Nişan anında 3D nişangah gövdesi gizlenir (görüntü ekranda çizilir) */
+  setOptic(v) {
+    const W = this.weapon;
+    if (!W || this._optic === v) return;
+    this._optic = v;
+    if (W.scope) W.scope.visible = v;
+    if (W.dot) W.dot.visible = v;
+  }
+
+  /** Nişangah arkasındaki göz noktası ve namlu yönü (dünya) */
+  sightInfo() {
+    const W = this.weapon;
+    if (!W || !W.sightEye) return null;
+    return { p: W.obj.localToWorld(W.sightEye.clone()), f: V(0, 0, -1).transformDirection(W.obj.matrixWorld) };
   }
 
   /** Kovan atma noktası ve yönü (dünya) */
@@ -696,8 +719,8 @@ function m4Model() {
   };
   const inv = obj.matrixWorld.clone().invert();
   const boxIn = (mesh) => { mesh.geometry.computeBoundingBox(); return mesh.geometry.boundingBox.clone().applyMatrix4(inv.clone().multiply(mesh.matrixWorld)); };
-  let mag = null, bolt = null;
-  m.traverse((o) => { if (o.isMesh && /Magazine/i.test(o.name + (o.parent?.name || ''))) mag = o; if (o.isMesh && /BoltCarrier/i.test(o.name + (o.parent?.name || ''))) bolt = o; });
+  let mag = null, bolt = null, scope = null;
+  m.traverse((o) => { if (o.isMesh && /Magazine/i.test(o.name + (o.parent?.name || ''))) mag = o; if (o.isMesh && /BoltCarrier/i.test(o.name + (o.parent?.name || ''))) bolt = o; if (o.isMesh && /Scope/i.test(o.name + (o.parent?.name || ''))) scope = o; });
   if (mag) {
     W.mag = mag;
     W.magRel = inv.clone().multiply(mag.matrixWorld);
@@ -714,6 +737,21 @@ function m4Model() {
     const bb = boxIn(bolt), bc = bb.getCenter(V());
     W.eject = V(bb.max.x + 0.006, bc.y + 0.006, bc.z);
   } else W.eject = V(0.025, 0.02, 0.03);
+  if (scope) {
+    // kırmızı nokta nişangah: tüpün optik ekseni, arkasında göz mesafesi
+    const sb = boxIn(scope), sc = sb.getCenter(V());
+    const tubeR = (sb.max.x - sb.min.x) / 2;
+    const ay = sb.max.y - tubeR;
+    W.sightEye = V(sc.x, ay, sb.max.z + 0.085);
+    // nişangahın içindeki kırmızı nokta (yalnızca arkadan görünür)
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0009, 16), new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false }));
+    dot.position.set(sc.x, ay, sb.min.z + 0.02);
+    dot.renderOrder = 999;
+    dot.userData.noAO = true;
+    obj.add(dot);
+    W.dot = dot;
+    W.scope = scope;
+  }
   return W;
 }
 
@@ -783,9 +821,14 @@ function pistolModel() {
   magMesh.visible = false;
   obj.add(magMesh);
   const magRel = new THREE.Matrix4().makeTranslation(0, -0.07, 0.045);
+  // gez-arpacık hattı: görünen tabancanın üst arka kenarı
+  obj.updateMatrixWorld(true);
+  const invO = obj.matrixWorld.clone().invert(), pb = new THREE.Box3();
+  m.traverse((o) => { if (o.isMesh && o.visible) { o.geometry.computeBoundingBox(); pb.union(o.geometry.boundingBox.clone().applyMatrix4(invO.clone().multiply(o.matrixWorld))); } });
+  const sightEye = pb.isEmpty() ? V(0, 0.06, 0.2) : V((pb.min.x + pb.max.x) / 2, pb.max.y + 0.006, pb.max.z + 0.17);
   return {
     obj, buttOffset: 0, gripR: V(0, -0.05, 0.05), gripL: V(-0.035, -0.06, 0.04), muzzle: V(0, 0.03, -0.16),
     mag: magMesh, magHidden: true, magRel, magGrip: V(0, -0.11, 0.045), magGripMag: V(0, -0.04, 0), eject: V(0.012, 0.035, -0.02),
-    boltRel: V(-0.015, 0.0, 0.0),
+    boltRel: V(-0.015, 0.0, 0.0), sightEye,
   };
 }

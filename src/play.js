@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { Rig } from './soldier.js';
+import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 import { CATALOG, isTarget, isPoint } from './objects.js';
 import { clamp, esc } from './util.js';
 import { icon, hydrateIcons } from './icons.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const STANCES = ['ayakta', 'diz', 'alcak', 'yuzustu'];
-const CAM_ADI = { sinematik: 'SİNEMATİK', takip: 'OMUZ KAMERASI', drone: 'DRONE', hedef: 'HEDEF ARKASI', yan: 'YAN AÇI', yakin: 'YAKIN PLAN', arka: 'ARKADAN GENİŞ' };
+const CAM_ADI = { fps: '1. ŞAHIS', sinematik: 'SİNEMATİK', takip: 'OMUZ KAMERASI', drone: 'DRONE', hedef: 'HEDEF ARKASI', yan: 'YAN AÇI', yakin: 'YAKIN PLAN', arka: 'ARKADAN GENİŞ' };
 const EYE_H = { ayakta: 1.6, diz: 1.1, alcak: 0.95, yuzustu: 0.5 };
 const angLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 const fmtT = (s) => {
@@ -28,6 +31,7 @@ export class PlayMode {
     this.active = false;
     this.keys = {};
     this.ray = new THREE.Raycaster();
+    this.ray.camera = engine.camera; // etiket sprite'larına çarpan ışınlar için gerekli
     this._tick = (dt) => this.tick(dt);
     this._after = () => this.afterRender();
     this.silah = 'tufek';
@@ -78,8 +82,13 @@ export class PlayMode {
     this.mags = [];
     this.smokes = [];
 
+    this.view = this.view || 'tps';
+    this._objs = null;
     this.buildRig();
     this.prepareCourse();
+    this.buildBVH();
+    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.updateProjectionMatrix();
     this.bindInput();
     E.onFrame.push(this._tick);
     E.afterRender.push(this._after);
@@ -106,6 +115,7 @@ export class PlayMode {
     window.removeEventListener('resize', this._resize);
     this.closeOverlay();
     document.getElementById('app').classList.remove('playing');
+    E.camera.near = 0.1;
     E.camera.fov = this.saved.fov;
     E.camera.updateProjectionMatrix();
     E.camera.position.copy(this.saved.pos);
@@ -128,6 +138,7 @@ export class PlayMode {
     this.engine.scene.add(this.rig.group);
     this.rig.state.aim = false;
     this.rig.onEvent = (n, r) => this.rigEvent(n, r);
+    this.rig.setFirstPerson(this.view === 'fps');
   }
 
   prepareCourse() {
@@ -243,6 +254,7 @@ export class PlayMode {
         if (['w', 'a', 's', 'd', ' ', 'shift', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
         if (this.state === 'intro' && k === 'enter') { this.start(false); return; }
         if (this.state === 'finished' && k === 'enter') { this.restart(); return; }
+        if (k === 'v') this.toggleView();
         if (k === 'c') this.toggleStance('diz');
         if (k === 'z') this.toggleStance('yuzustu');
         if (k === 'x') this.toggleStance('alcak');
@@ -398,6 +410,7 @@ export class PlayMode {
     const speed = this.vel.length();
     // karakter yönü
     if (speed > 0.2 || aimNow || now - this.lastShot < 0.8 || running) this.yaw = angLerp(this.yaw, this.camYaw, 1 - Math.exp(-dt * 12));
+    if (this.view === 'fps') this.yaw = this.camYaw; // 1. şahısta gövde ve silah bakışla tam hizalı
     const fwdComp = this.vel.dot(fwd);
     const mvs = fwdComp < -0.2 && Math.abs(this.vel.dot(rgt)) < 0.5 ? -speed : speed;
     this.rig.setMove(mvs);
@@ -418,8 +431,9 @@ export class PlayMode {
     const crawling = this.stance === 'yuzustu' && this.vel.length() > 0.1;
     st.crawl = THREE.MathUtils.lerp(st.crawl || 0, crawling ? 1 : 0, 1 - Math.exp(-dt * 8));
     if (crawling) st.crawlPh = (st.crawlPh || 0) + dt * 5.5 * Math.sign(this.vel.dot(fwd) || 1);
-    st.aim = (aimNow || now - this.lastShot < 0.7 || this.stance !== 'ayakta') && this.reloadU < 0;
+    st.aim = (aimNow || now - this.lastShot < 0.7 || this.stance !== 'ayakta' || (this.view === 'fps' && speed < 2.6)) && this.reloadU < 0;
     st.move = this.stance === 'ayakta' ? Math.min(1, speed / 1.6) : 0;
+    st.ready = this.view === 'fps' ? 1 : 0; // 1. şahısta tüfek görüş alanında (sıkıştırılmış hazır)
     st.reload = this.reloadU;
     st.reloadEmpty = this.reloadEmpty;
     st.boltLocked = this.boltLocked;
@@ -439,14 +453,15 @@ export class PlayMode {
 
     // kamera
     this.aimT += ((aimNow ? 1 : 0) - this.aimT) * (1 - Math.exp(-dt * 12));
-    const cam = this.camFor(this.pos, this.camYaw, this.camPitch, this.aimT, this.stance, this.leanT);
+    const cam = this.view === 'fps' ? this.fpCam(dt) : this.collideCam(this.camFor(this.pos, this.camYaw, this.camPitch, this.aimT, this.stance, this.leanT));
     this.shake = Math.max(0, this.shake - dt * 7);
     if (this.shake > 0) { cam.p.x += (Math.random() - 0.5) * 0.022 * this.shake; cam.p.y += (Math.random() - 0.5) * 0.022 * this.shake; }
-    if (this.state === 'intro') E.camera.position.copy(cam.p);
+    if (this.state === 'intro' || this.view === 'fps') E.camera.position.copy(cam.p);
     else E.camera.position.lerp(cam.p, 1 - Math.exp(-dt * 20));
     E.camera.lookAt(cam.look);
     E.camera.rotateZ(cam.roll + (Math.random() - 0.5) * 0.014 * this.shake);
     E.controls.target.copy(cam.pivot);
+    this.rig.setOptic(!(this.view === 'fps' && this.aimT > 0.55 && this.silah !== 'tabanca'));
     if (Math.abs(E.camera.fov - cam.fov) > 0.05) { E.camera.fov = cam.fov; E.camera.updateProjectionMatrix(); }
 
     // kurallar
@@ -455,10 +470,15 @@ export class PlayMode {
     this.updateDebris(dt);
     this.hitMark = Math.max(0, this.hitMark - dt * 3);
     // nişangahın gösterdiği yer askerin görüş hattında engelli mi? (her 3 karede bir)
-    if (running && (this._blk = (this._blk || 0) + 1) % 3 === 0) {
-      const h = this.traceShot();
-      this.truePt = h && this.blocked ? h.point.clone().project(this.engine.camera) : null;
-    } else if (!running) this.truePt = null;
+    if (running) {
+      this.traceShot();
+      const sp = this.aimWorld.clone().project(this.engine.camera);
+      const tx = sp.z < 1 ? sp.x : 0, ty = sp.z < 1 ? sp.y : 0;
+      const kx = 1 - Math.exp(-dt * 30);
+      this.xh = this.xh || { x: 0, y: 0 };
+      this.xh.x += (tx - this.xh.x) * kx;
+      this.xh.y += (ty - this.xh.y) * kx;
+    }
     this.drawHud(now);
   }
 
@@ -532,6 +552,48 @@ export class PlayMode {
     const p = pivot.clone().addScaledVector(dirF, -dist);
     p.y = Math.max(0.25, p.y);
     return { p, look: pivot.clone().addScaledVector(dirF, 20), pivot, fov: THREE.MathUtils.lerp(52, 30, aimT), roll: -lean * 0.09 };
+  }
+
+  /** 1. şahıs kamera: gözden bakış; nişan alınca tüfeğin nişangahının arkasına geçer */
+  fpCam(dt) {
+    return this.fpCamFrom(this.camYaw, this.camPitch, this.aimT, this.leanT, dt, this.yaw);
+  }
+  fpCamFrom(cy, cp, aimT, lean, dt, yaw) {
+    const r = this.rig, head = r.B?.('Head');
+    const f = V(-Math.sin(cy) * Math.cos(cp), Math.sin(cp), -Math.cos(cy) * Math.cos(cp));
+    const fh = V(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const hp = head ? head.getWorldPosition(V()) : r.group.position.clone().add(V(0, 1.6, 0));
+    const eye = hp.add(V(0, 0.095, 0)).addScaledVector(fh, 0.17); // yaka ve askıların önünde
+    this._fpEye = this._fpEye && dt > 0 ? this._fpEye.lerp(eye, 1 - Math.exp(-dt * 18)) : eye.clone();
+    const p = this._fpEye.clone(), dir = f.clone();
+    const si = r.sightInfo?.();
+    if (si && aimT > 0.001) { p.lerp(si.p, aimT); dir.lerp(si.f, aimT).normalize(); }
+    return { p, look: p.clone().addScaledVector(dir, 20), pivot: p.clone(), fov: THREE.MathUtils.lerp(74, this.silah === 'tabanca' ? 56 : 44, aimT), roll: -lean * 0.12 };
+  }
+
+  /** 3. şahıs kamera duvar/paravan içine girmesin */
+  collideCam(c) {
+    const d = c.p.clone().sub(c.pivot), len = d.length();
+    if (len < 0.01) return c;
+    d.normalize();
+    this.ray.set(c.pivot, d);
+    this.ray.far = len + 0.2;
+    for (const h of this.ray.intersectObject(this.ed.root, true)) {
+      if (!visibleChain(h.object) || h.object.isSprite || h.object.isLine2 || h.object.type === 'Line2') continue;
+      if (h.distance < len + 0.15) c.p = c.pivot.clone().addScaledVector(d, Math.max(0.2, h.distance - 0.2));
+      break;
+    }
+    return c;
+  }
+
+  toggleView() {
+    if (this.state === 'replay') return;
+    this.view = this.view === 'fps' ? 'tps' : 'fps';
+    this.rig.setFirstPerson(this.view === 'fps');
+    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.updateProjectionMatrix();
+    this._fpEye = null;
+    this.say(this.view === 'fps' ? '1. ŞAHIS GÖRÜŞ' : '3. ŞAHIS GÖRÜŞ', '#ffffff', 0.9);
   }
 
   // ===================== şarjör =====================
@@ -688,6 +750,46 @@ export class PlayMode {
     }
   }
 
+  /** Kırmızı nokta nişangah görüntüsü (Aimpoint tipi, 1x): gövde halkası, mercek, parlayan nokta */
+  drawRedDot(g, W, H, k, a) {
+    const cx = W / 2, cy = H / 2, R = H * 0.34;
+    g.save();
+    g.globalAlpha = a;
+    // nişangah gövdesi: kalın koyu halka, iç kenarda metal parlaması
+    g.lineWidth = R * 0.32;
+    const ring = g.createRadialGradient(cx, cy, R * 0.98, cx, cy, R * 1.32);
+    ring.addColorStop(0, 'rgba(18,20,22,1)');
+    ring.addColorStop(0.15, 'rgba(48,52,56,1)');
+    ring.addColorStop(0.3, 'rgba(14,15,17,1)');
+    ring.addColorStop(1, 'rgba(8,9,10,1)');
+    g.strokeStyle = ring;
+    g.beginPath(); g.arc(cx, cy, R * 1.16, 0, Math.PI * 2); g.stroke();
+    // alt montaj ve ayar düğmeleri
+    g.fillStyle = 'rgba(12,13,15,1)';
+    g.fillRect(cx - R * 0.42, cy + R * 1.18, R * 0.84, H);
+    g.beginPath(); g.roundRect(cx + R * 1.12, cy - R * 0.22, R * 0.28, R * 0.44, R * 0.06); g.fill();
+    g.beginPath(); g.roundRect(cx - R * 0.2, cy - R * 1.42, R * 0.4, R * 0.24, R * 0.06); g.fill();
+    // mercek: hafif yeşil-mor yansıma ve kenar kararması
+    const lens = g.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.05, cx, cy, R);
+    lens.addColorStop(0, 'rgba(160,200,255,0.06)');
+    lens.addColorStop(0.7, 'rgba(90,120,110,0.03)');
+    lens.addColorStop(1, 'rgba(0,0,0,0.28)');
+    g.fillStyle = lens;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+    // parlayan kırmızı nokta
+    const r = Math.max(2.2, 2.6 * k) * (1 + this.recoil * 0.4);
+    const glow = g.createRadialGradient(cx, cy, 0, cx, cy, r * 5);
+    glow.addColorStop(0, 'rgba(255,60,40,0.55)');
+    glow.addColorStop(1, 'rgba(255,40,20,0)');
+    g.fillStyle = glow;
+    g.beginPath(); g.arc(cx, cy, r * 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ff3a26';
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,220,210,0.9)';
+    g.beginPath(); g.arc(cx, cy, r * 0.4, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
   // ===================== mühimmat göstergesi =====================
   drawAmmo(g, W, H, k, font) {
     const pw = 250 * k, ph = 86 * k, x = W - pw - 16 * k, y = H - ph - 54 * k;
@@ -743,6 +845,9 @@ export class PlayMode {
     this.rpBar?.remove();
     this.rpBar = null;
     this.state = 'finished';
+    this.rig.setFirstPerson(this.view === 'fps');
+    this.engine.camera.near = this.view === 'fps' ? 0.03 : 0.1;
+    this.engine.camera.updateProjectionMatrix();
     // parkuru koşunun bittiği hale getir
     this.seekReplay(this.rp.end + 1);
     this._showResult();
@@ -895,7 +1000,8 @@ export class PlayMode {
     const fwd = V(-Math.sin(s.yaw), 0, -Math.cos(s.yaw)), rgt = V(Math.cos(s.yaw), 0, -Math.sin(s.yaw));
     const eh = EYE_H[s.st] || 1.6;
     let c;
-    if (mode === 'takip') c = this.camFor(pos, s.cy, s.cp, s.aimT, s.st, s.lean);
+    if (mode === 'fps') c = this.fpCamFrom(s.cy, s.cp, s.aimT, s.lean, 0, s.yaw);
+    else if (mode === 'takip') c = this.camFor(pos, s.cy, s.cp, s.aimT, s.st, s.lean);
     else if (mode === 'arka') c = { p: pos.clone().addScaledVector(fwd, -3.6).addScaledVector(rgt, 0.7).add(V(0, eh + 0.6, 0)), look: pos.clone().addScaledVector(fwd, 8).add(V(0, eh * 0.6, 0)), fov: 50, roll: 0 };
     else if (mode === 'yan') c = { p: pos.clone().addScaledVector(rgt, 3.3).addScaledVector(fwd, 0.9).add(V(0, eh * 0.85, 0)), look: pos.clone().addScaledVector(fwd, 1.1).add(V(0, eh * 0.78, 0)), fov: 42, roll: 0 };
     else if (mode === 'yakin') {
@@ -918,20 +1024,27 @@ export class PlayMode {
     }
     const cut = rp.curCam !== mode;
     rp.curCam = mode;
+    if (cut) {
+      this.rig.setFirstPerson(mode === 'fps');
+      E.camera.near = mode === 'fps' ? 0.03 : 0.1;
+      E.camera.updateProjectionMatrix();
+    }
     if (this.shake > 0) c.p.x += (Math.random() - 0.5) * 0.02 * this.shake;
-    if (cut || mode === 'takip') { E.camera.position.copy(c.p); rp.look = c.look.clone(); }
+    if (cut || mode === 'takip' || mode === 'fps') { E.camera.position.copy(c.p); rp.look = c.look.clone(); }
     else { const k = 1 - Math.exp(-dt * 5); E.camera.position.lerp(c.p, k); rp.look.lerp(c.look, k); }
     E.camera.lookAt(rp.look);
     E.camera.rotateZ(c.roll || 0);
     if (Math.abs(E.camera.fov - c.fov) > 0.05) { E.camera.fov = cut ? c.fov : THREE.MathUtils.lerp(E.camera.fov, c.fov, 1 - Math.exp(-dt * 5)); E.camera.updateProjectionMatrix(); }
     rp.mode = mode;
+    rp.ads = mode === 'fps' && s.aimT > 0.55 && this.silah !== 'tabanca' ? Math.min(1, (s.aimT - 0.55) / 0.3) : 0;
+    this.rig.setOptic(!rp.ads);
   }
 
   buildReplayBar() {
     this.rpBar?.remove();
     const d = document.createElement('div');
     d.className = 'rp-bar';
-    const cams = [['sinematik', 'Sinematik'], ['takip', 'Omuz'], ['drone', 'Drone'], ['hedef', 'Hedef Arkası'], ['yan', 'Yan'], ['yakin', 'Yakın'], ['arka', 'Arkadan']];
+    const cams = [['sinematik', 'Sinematik'], ['fps', '1. Şahıs'], ['takip', 'Omuz'], ['drone', 'Drone'], ['hedef', 'Hedef Arkası'], ['yan', 'Yan'], ['yakin', 'Yakın'], ['arka', 'Arkadan']];
     d.innerHTML = `
       <div class="rp-row">
         <button class="rp-play" data-rp="play" title="Oynat / duraklat (Boşluk)"></button>
@@ -991,6 +1104,7 @@ export class PlayMode {
       g.fillRect(0, 0, W, bh);
       g.fillRect(0, H - bh, W, bh);
     }
+    if (rp.ads > 0) this.drawRedDot(g, W, H, k, rp.ads);
     const top = rp.cam === 'sinematik' ? H * 0.075 + 12 * k : 16 * k;
     const b = this.ed.state.bilgi;
     g.textBaseline = 'top';
@@ -1082,8 +1196,17 @@ export class PlayMode {
   }
 
   sceneObjs() {
-    return (this._objs ||= [this.ed.root, this.env.floor, ...this.env.group.children.filter((o) => o.name === 'berms' || o.name === 'terrain')].filter(Boolean));
+    return (this._objs ||= [this.ed.root, this.env.floor, ...this.env.group.children.filter((o) => o.name === 'berms')].filter(Boolean));
   }
+  buildBVH() {
+    const t0 = performance.now();
+    for (const o of [this.env.floor, ...this.env.group.children.filter((c) => c.name === 'berms' || c.name === 'terrain')]) {
+      if (o?.geometry && !o.geometry.boundsTree) o.geometry.computeBoundsTree();
+    }
+    this.ed.root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.geometry && !o.geometry.boundsTree && o.geometry.attributes.position?.count > 300) o.geometry.computeBoundsTree(); });
+    console.info('BVH', Math.round(performance.now() - t0), 'ms');
+  }
+
   firstHit(origin, dir, far) {
     this.ray.set(origin, dir);
     this.ray.far = far;
@@ -1110,9 +1233,11 @@ export class PlayMode {
     d.normalize();
     const h = this.firstHit(eye, d, len + 0.05);
     this.blocked = !!(h && h.distance < len - 0.15);
+    this.aimWorld = h ? h.point.clone() : aimP;
     return h || ch;
   }
   shotOrigin() {
+    if (this.view === 'fps' && this.state !== 'replay') return this.engine.camera.position.clone();
     const head = this.rig.B?.('Head');
     const p = head ? head.getWorldPosition(new THREE.Vector3()) : this.pos.clone().add(V(0, 1.6, 0));
     // nişangah hattı: başın biraz sağı (dipçik sağ omuzda)
@@ -1223,19 +1348,16 @@ export class PlayMode {
       g.fillText('KAYIT ' + fmtT(t).slice(0, 5), W / 2 - 38 * k, 24 * k);
     }
     // nişangah
-    if (this.state === 'run' && this.truePt) {
-      // engel: merminin gerçekte çarpacağı nokta (paravan) kırmızı işaretle gösterilir
-      const bx = (this.truePt.x * 0.5 + 0.5) * W, by = (-this.truePt.y * 0.5 + 0.5) * H;
-      g.strokeStyle = 'rgba(255,70,60,0.95)';
-      g.lineWidth = 2.5 * k;
-      g.beginPath(); g.arc(bx, by, 9 * k, 0, Math.PI * 2); g.moveTo(bx - 6 * k, by - 6 * k); g.lineTo(bx + 6 * k, by + 6 * k); g.stroke();
-      g.fillStyle = 'rgba(255,90,80,0.95)'; g.font = font(700, 14); g.textAlign = 'center';
-      g.fillText('GÖRÜŞ ENGELLİ', W / 2, H / 2 + 22 * k); g.textAlign = 'left';
-    }
-    if (this.state === 'run') {
-      const cx = W / 2, cy = H / 2;
+    const adsFps = this.view === 'fps' && this.aimT > 0.55 && this.silah !== 'tabanca';
+    if (adsFps && this.state === 'run') this.drawRedDot(g, W, H, k, Math.min(1, (this.aimT - 0.55) / 0.3));
+    if (this.state === 'run' && !adsFps) {
+      const xh = this.xh || { x: 0, y: 0 };
+      const cx = (xh.x * 0.5 + 0.5) * W, cy = (-xh.y * 0.5 + 0.5) * H;
+      const off = Math.hypot(cx - W / 2, cy - H / 2) > 6 * k;
+      // ekran merkezi ile gerçek isabet noktası ayrıysa merkezde soluk bir halka (nişan yönü)
+      if (off) { g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1.5 * k; g.beginPath(); g.arc(W / 2, H / 2, 4 * k, 0, Math.PI * 2); g.stroke(); }
       const gap = (this.aimT > 0.5 ? 4 : 9 + this.recoil * 10) * k, len = 9 * k;
-      g.strokeStyle = 'rgba(255,255,255,0.9)';
+      g.strokeStyle = this.blocked ? 'rgba(255,190,90,0.95)' : 'rgba(255,255,255,0.9)';
       g.lineWidth = 2 * k;
       g.shadowColor = 'rgba(0,0,0,0.8)';
       g.shadowBlur = 3 * k;
@@ -1280,7 +1402,7 @@ export class PlayMode {
     // alt bilgi
     g.fillStyle = 'rgba(255,255,255,0.6)';
     g.font = font(600, 13);
-    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · Q/E: köşe aç · C: diz · X: alçak çöküş · Z: yüzüstü (W/S ile sürün) · R: şarjör · K: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
+    if (this.state === 'run' && !this.rec) g.fillText('W A S D: hareket · Shift: koş · Fare: bak · Sağ tık: nişan · Sol tık: ateş · V: 1./3. şahıs · Q/E: köşe aç · C: diz · X: alçak çöküş · Z: yüzüstü (W/S ile sürün) · R: şarjör · K: kayıt · Enter: bitir · Esc: duraklat', 18 * k, H - 28 * k);
     g.textAlign = 'right';
     g.fillStyle = 'rgba(243,239,228,0.55)';
     g.font = font(700, 15);
@@ -1317,7 +1439,7 @@ export class PlayMode {
         <div><kbd>Fare</kbd> Bakış</div><div><kbd>Sağ tık</kbd> Nişan al</div>
         <div><kbd>Sol tık</kbd> Ateş</div><div><kbd>C</kbd> Diz çök</div>
         <div><kbd>X</kbd> Alçak çöküş</div><div><kbd>Z</kbd> Yüzüstü (W/S sürünme)</div><div><kbd>R</kbd> Şarjör değiştir</div><div><kbd>K</kbd> Video kaydı aç/kapa</div>
-        <div><kbd>Q</kbd> Sola köşe aç</div><div><kbd>E</kbd> Sağa köşe aç</div>
+        <div><kbd>V</kbd> 1. / 3. şahıs görüş</div><div><kbd>Q</kbd> Sola köşe aç</div><div><kbd>E</kbd> Sağa köşe aç</div>
         <div><kbd>Enter</kbd> Parkuru bitir</div><div><kbd>Esc</kbd> Duraklat</div>
       </div>
       <div class="fld"><label>Silah</label><div class="seg" id="plSilah"><button data-a="tufek" class="${this.silah === 'tufek' ? 'on' : ''}">Tüfek</button><button data-a="tabanca" class="${this.silah === 'tabanca' ? 'on' : ''}">Tabanca</button></div></div>

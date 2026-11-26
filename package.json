@@ -15,10 +15,11 @@
   "devDependencies": {
     "@electron/packager": "18.3.6",
     "@fontsource/inter": "5.1.0",
-    "electron-builder": "25.1.8",
     "@fontsource/rajdhani": "5.1.0",
     "electron": "33.4.11",
+    "electron-builder": "25.1.8",
     "esbuild": "0.24.0",
-    "three": "0.170.0"
+    "three": "0.170.0",
+    "three-mesh-bvh": "^0.8.3"
   }
 }
