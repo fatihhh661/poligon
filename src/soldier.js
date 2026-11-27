@@ -627,6 +627,9 @@ export class Rig {
       const lat = d.clone().addScaledVector(t0, -along);
       const w = moving ? L.warp : Math.min(1, L.warp);
       const wp = hip.clone().add(lat).addScaledVector(tr, along * w);
+      // ayaklar arası açıklık: teçhizatlı asker botları birbirine değmesin (ayak merkezi kalçadan ≥ 11 cm)
+      const sd = side === 'Left' ? -1 : 1, latR = wp.clone().sub(hip).dot(rr);
+      if (latR * sd < 0.11) wp.addScaledVector(rr, sd * 0.11 - latR);
       wp.y = Math.max(fp.y, gy);
       const yawW = fyaw + ((L.rho * Math.PI) / 180) * 0.6; // ayak ucu adım yönüne kısmen döner
       const f = F[side];
@@ -666,9 +669,11 @@ export class Rig {
         // iniş: basış süresince alınacak yolun ~%42'si kalçanın önünde (insan yürüyüşü/koşusu oranı)
         const S = (s.locoSpeed || 0) / Math.max(0.2, L.cad || 1);
         const land = hip.clone().addScaledVector(this._gv, rem / Math.max(0.2, L.cad || 1))
-          .addScaledVector(rr, lo.lat).addScaledVector(tr, 0.42 * lo.fc * S);
+          .addScaledVector(rr, sd * Math.max(0.115, Math.abs(lo.lat))).addScaledVector(tr, 0.42 * lo.fc * S);
         const kk = u * u * (3 - 2 * u);
         pos = f.from.clone().lerp(land, kk); pos.y = wp.y;
+        // diğer ayağın yanından geçerken hafif dışa kavis
+        pos.addScaledVector(rr, sd * 0.035 * Math.sin(Math.PI * u));
         fy = f.fromYaw + wrapA(yawW - f.fromYaw) * kk;
       } else { // düzeltme adımı
         f.u = Math.min(1, f.u + dt / (f.dur || 0.3));
@@ -712,7 +717,8 @@ export class Rig {
       const ul = B(side + 'UpLeg'), foot = B(side + 'Foot');
       // diz yönü: kalçanın baktığı yön ile ayak ucunun ortası
       const ff = V(Math.sin(T[side].yaw), 0, Math.cos(T[side].yaw));
-      const kd = rf.dot(ff) > -0.2 ? rf.clone().add(ff).normalize() : rf.clone();
+      const rr = V(1, 0, 0).transformDirection(root.matrixWorld); rr.y = 0; rr.normalize();
+      const kd = (rf.dot(ff) > -0.2 ? rf.clone().add(ff).normalize() : rf.clone()).addScaledVector(rr, side === 'Left' ? -0.22 : 0.22).normalize();
       const pole = wpos(ul).add(T[side].p).multiplyScalar(0.5).addScaledVector(kd, 1.2).addScaledVector(up, 0.1);
       // topuk kalkışı: basan ayak geride kalıp bacak boyu yetmeyince ayak parmak tabanı
       // etrafında döner, topuk kalkar (gerçek yürüyüşteki itiş anı)
@@ -863,6 +869,12 @@ export class Rig {
       if (B('LeftShoulder')) rotWorld(B('LeftShoulder'), back, br * amp * 0.7);
       if (B('RightShoulder')) rotWorld(B('RightShoulder'), back, -br * amp * 0.7);
     }
+    // tüfekli duruş: gövde ~24° sağa döner (sol omuz önde, sol el el kundağına yetişir), baş ileri bakar
+    if (this.silah !== 'tabanca' && this.weapon && s.stance !== 'yuzustu') {
+      const bl = -0.42 * (1 - 0.7 * (s.sprint || 0));
+      rotWorld(spine, up, bl * 0.3); rotWorld(spine1, up, bl * 0.35); rotWorld(spine2, up, bl * 0.35);
+      rotWorld(neck, up, -bl * 0.65); rotWorld(head, up, -bl * 0.35);
+    }
     // geri tepme: dipçik omza vurur, üst gövde bir an geri itilir
     if (s.recoil > 0.01 && s.stance !== 'yuzustu') rotWorld(spine2, right, -s.recoil * 0.07);
     // yukarı/aşağı nişan: gövde ve baş eğilir
@@ -901,22 +913,34 @@ export class Rig {
       if (s.stance === 'yuzustu') p.set(0.03, 0.32, hL.z - 0.6);
       o.position.copy(p);
     } else {
-      // hazır: duruyorken alçak hazır, yürürken sıkıştırılmış hazır (dipçik omuzda, namlu hafif aşağı)
-      // dururken alçak hazır (namlu ileri-aşağı ~20°, hafif içe), yürürken sıkıştırılmış hazır,
-      // koşarken göğüs önünde çapraz (namlu sol yukarı), nişanda omuzda
+      // Tüfek duruşları (askerî talimat): dipçik her zaman omuz cebinde kalır, yalnızca namlu iner.
+      //  nişan: dipçik omuzda, yanak dipçikte, nişangâh gözde
+      //  alçak hazır (dururken): dipçik omuzda, namlu ~28° aşağı, hafif içe
+      //  hazır (yürürken): dipçik omuzda, namlu ~19° aşağı
+      //  koşu: tüfek göğüs önünde çapraz, kabza sağ kalça önünde, namlu sol-aşağı-ileri
       const spr = (s.sprint || 0) * (1 - abW) * (1 - renv);
-      const rxLow = pitch * 0.35 - lr(0.38, 0.2, mv), ryLow = lr(0.22, 0.08, mv);
-      o.rotation.set(lr(lr(rxLow, 0.62, spr), pitch * (1 - renv), abW) + rec * 0.11, lr(lr(ryLow, 0.72, spr), 0, abW), 0);
-      const bLow = V(sL.x - 0.04, hL.y - 0.36, sL.z - 0.1).lerp(V(sL.x - 0.06, hL.y - 0.24, sL.z - 0.07), mv);
-      bLow.lerp(V(sL.x - 0.02, hL.y - 0.58, sL.z - 0.16), spr);
-      const bAim = V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06);
-      const butt = bLow.lerp(bAim, abW);
+      const pocket = V(sL.x - 0.07, hL.y - 0.12, sL.z - 0.06);
+      const rxReady = lr(-0.5, -0.33, mv) + pitch * 0.3, ryReady = lr(0.13, 0.06, mv);
+      o.rotation.set(lr(rxReady, pitch * (1 - renv), abW) + rec * 0.11, lr(ryReady, 0, abW), 0);
+      const butt = pocket.clone().add(V(0.012, -0.03, 0.01)).lerp(pocket, abW);
       if (s.stance === 'yuzustu') butt.set(sL.x - 0.08, Math.max(0.3, hL.y - 0.1), sL.z - 0.08);
       butt.z += rec * 0.055; // dipçik omza geri vurur
       if (Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') butt.sub(sL).applyAxisAngle(V(0, 1, 0), tw).add(sL);
       o.rotation.y += s.stance !== 'yuzustu' ? tw : 0;
       const dir = V(0, 0, -1).applyEuler(o.rotation);
       o.position.copy(butt).addScaledVector(dir, W.buttOffset);
+      if (spr > 0.001 && W.gripLocal) {
+        // koşu taşıması: namlu yönü ve tüfeğin üst yüzü; kabza hedefine göre konum
+        const D = V(-0.62, -0.42, -0.66).normalize().applyAxisAngle(V(0, 1, 0), tw);
+        const U0 = V(0, 1, 0).addScaledVector(D, -D.y).normalize().applyAxisAngle(D, -0.35);
+        const Z = D.clone().negate(), X = U0.clone().cross(Z).normalize(), Y = Z.clone().cross(X);
+        const qS = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+        const gT = V(sL.x - 0.05, hL.y - 0.6, sL.z - 0.2);
+        if (Math.abs(tw) > 1e-4) gT.sub(sL).applyAxisAngle(V(0, 1, 0), tw).add(sL);
+        const pS = gT.sub(W.gripLocal.clone().applyQuaternion(qS));
+        o.quaternion.slerp(qS, spr);
+        o.position.lerp(pS, spr);
+      }
     }
     if (this.silah === 'tabanca' && Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') {
       o.position.sub(hL).applyAxisAngle(V(0, 1, 0), tw).add(hL);
@@ -979,15 +1003,42 @@ export class Rig {
       rotWorld(neck, back, -0.12 * ab);
       rotWorld(head, right, 0.12 * ab);
     }
-    twoBoneIK(B('RightArm'), B('RightForeArm'), B('RightHand'), gR, poleR);
-    twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), gL, poleL);
-    const fw = V(0, 0, -1).applyEuler(o.rotation).transformDirection(g.matrixWorld);
-    const hr = wpos(B('RightHand')), hl = wpos(B('LeftHand'));
-    pointBone(B('RightHand'), B('RightHandMiddle1'), hr.clone().addScaledVector(fw, 0.06).addScaledVector(up, -0.08).addScaledVector(right, -0.03));
-    if (renv > 0.3) pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(up, 0.06).addScaledVector(fw, 0.05));
-    else pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
-    this.curl('Right', 0.9);
-    this.curl('Left', renv > 0.3 ? 0.75 : this.silah === 'tabanca' ? 0.9 : 0.6);
+    if (this.silah !== 'tabanca' && this.hand?.Right && this.hand?.Left) {
+      // tüfek tutuşu: eller silahın kendi uzayında tanımlı yerlere ve açılara oturur
+      // sağ el: kabzanın sağ yanında avuç, işaret parmağı üstte; kabza ekseni aşağı-geri ~37°
+      o.updateMatrixWorld(true);
+      const wd = (x, y, z) => V(x, y, z).transformDirection(o.matrixWorld);
+      this.gripHand('Right', o.localToWorld(W.gripLocal.clone()), wd(-0.08, -0.6, -0.8), wd(-1, 0, 0.1), poleR);
+      const onTrigger = ab > 0.5 && renv < 0.1;
+      this.curl('Right', 0.95, { index: onTrigger ? 0.5 : 0.08, thumb: 0.95 });
+      if (u >= 0 && renv > 0.05) {
+        // şarjör değiştirme: sol el kendi yolunu izler
+        twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), gL, poleL);
+        const hl = wpos(B('LeftHand'));
+        const fw = V(0, 0, -1).applyEuler(o.rotation).transformDirection(g.matrixWorld);
+        if (renv > 0.3) pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(up, 0.06).addScaledVector(fw, 0.05));
+        else pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, 0.04).addScaledVector(up, -0.02).addScaledVector(right, 0.07));
+        this.curl('Left', renv > 0.3 ? 0.75 : 0.6);
+      } else {
+        // sol el: el kundağının altında, avuç yukarı-içe, parmaklar sağ yanı sarar, başparmak solda ileri
+        // kolun yetiştiği en öndeki nokta (el kundağının ortasından şarjör yuvasının önüne)
+        const shL = wpos(B('LeftArm')), sc = W.sc || 1;
+        let cl = null;
+        for (let z = -0.2; z <= -0.06; z += 0.01) { cl = o.localToWorld(V(-0.02, -0.015, z).multiplyScalar(sc)); if (shL.distanceTo(cl) < this.armLen + 0.04) break; }
+        this.gripHand('Left', cl, wd(1, -0.35, 0), wd(0.35, 1, 0), poleL);
+        this.curl('Left', 0.85, { thumb: 0.25 });
+      }
+    } else {
+      twoBoneIK(B('RightArm'), B('RightForeArm'), B('RightHand'), gR, poleR);
+      twoBoneIK(B('LeftArm'), B('LeftForeArm'), B('LeftHand'), gL, poleL);
+      const fw = V(0, 0, -1).applyEuler(o.rotation).transformDirection(g.matrixWorld);
+      const hr = wpos(B('RightHand')), hl = wpos(B('LeftHand'));
+      pointBone(B('RightHand'), B('RightHandMiddle1'), hr.clone().addScaledVector(fw, 0.06).addScaledVector(up, -0.08).addScaledVector(right, -0.03));
+      if (renv > 0.3) pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(up, 0.06).addScaledVector(fw, 0.05));
+      else pointBone(B('LeftHand'), B('LeftHandMiddle1'), hl.clone().addScaledVector(fw, this.silah === 'tabanca' ? 0.06 : 0.04).addScaledVector(up, -0.02).addScaledVector(right, this.silah === 'tabanca' ? 0.06 : 0.07));
+      this.curl('Right', 0.9);
+      this.curl('Left', renv > 0.3 ? 0.75 : this.silah === 'tabanca' ? 0.9 : 0.6);
+    }
     this.simJiggle(dt);
   }
 
@@ -1188,38 +1239,90 @@ export class Rig {
 
   /** Mark iskeletinde parmak bükme yönünü ölçerek belirle */
   setupCurl() {
+    // el çerçevesi (kemiğin kendi uzayında): F parmak yönü, T başparmak tarafı, P avuç içi.
+    // Sağ elde F×P = T, sol elde (ayna) P×F = T. Bükülme yönü avuca doğru seçilir.
     this.curlSign = {};
+    this.hand = {};
+    this.root.updateMatrixWorld(true);
+    this.armLen = wpos(this.B('LeftArm')).distanceTo(wpos(this.B('LeftForeArm'))) + wpos(this.B('LeftForeArm')).distanceTo(wpos(this.B('LeftHand')));
     for (const side of ['Right', 'Left']) {
-      const m1 = this.B(`${side}HandMiddle1`), m3 = this.B(`${side}HandMiddle3`), th = this.B(`${side}HandThumb1`);
-      if (!m1 || !m3 || !th) continue;
-      const q0 = m1.quaternion.clone();
-      const axis = this.palmAxis(side);
-      const d0 = wpos(m3).distanceTo(wpos(th));
-      rotWorld(m1, axis, 0.6);
-      const d1 = wpos(m3).distanceTo(wpos(th));
-      m1.quaternion.copy(q0);
+      const h = this.B(`${side}Hand`), m1 = this.B(`${side}HandMiddle1`), i1 = this.B(`${side}HandIndex1`), p1 = this.B(`${side}HandPinky1`);
+      if (!h || !m1 || !i1 || !p1) continue;
       this.root.updateMatrixWorld(true);
-      this.curlSign[side] = d1 < d0 ? 1 : -1;
+      const qi = h.getWorldQuaternion(new THREE.Quaternion()).invert(), hp = wpos(h);
+      const loc = (b) => wpos(b).sub(hp).applyQuaternion(qi);
+      const Fl = loc(m1).normalize();
+      let Tl = loc(i1).sub(loc(p1)); Tl.addScaledVector(Fl, -Tl.dot(Fl)).normalize();
+      const Pl = side === 'Right' ? Tl.clone().cross(Fl) : Fl.clone().cross(Tl);
+      this.hand[side] = { Fl, Pl, Tl, len: loc(m1).length() };
+      // T etrafında +açı ile döndürünce parmak avuca mı gidiyor?
+      const rot = Fl.clone().applyAxisAngle(Tl, 0.3);
+      this.curlSign[side] = rot.sub(Fl).dot(Pl) > 0 ? 1 : -1;
     }
+  }
+  /**
+   * Eli silaha oturt: C silah yüzeyindeki avuç ortası noktası, Fw parmak yönü, Pw avucun baktığı yön (dünya).
+   * Bileği IK ile götürür, ön kolu bileğe göre burar (bükülme yapmaz), el yönünü birebir uygular.
+   */
+  gripHand(side, C, Fw, Pw, pole) {
+    const H = this.hand[side], B = this.B;
+    const P = Pw.clone().normalize(), F = Fw.clone().addScaledVector(P, -Fw.dot(P)).normalize();
+    const X = F.clone().cross(P), Xl = H.Fl.clone().cross(H.Pl);
+    const mw = new THREE.Matrix4().makeBasis(F, P, X), ml = new THREE.Matrix4().makeBasis(H.Fl, H.Pl, Xl);
+    const Qw = new THREE.Quaternion().setFromRotationMatrix(mw.multiply(ml.transpose()));
+    // avuç ortası: bilekten parmak köküne doğru yarı yol, avuç yüzeyine 2,5 cm
+    const pc = H.Fl.clone().multiplyScalar(H.len * 0.5).addScaledVector(H.Pl, 0.026);
+    const wrist = C.clone().sub(pc.applyQuaternion(Qw));
+    const arm = B(side + 'Arm'), fore = B(side + 'ForeArm'), hand = B(side + 'Hand');
+    twoBoneIK(arm, fore, hand, wrist, pole);
+    // ön kol burulması: elin istenen dönüşünün ön kol ekseni etrafındaki kısmının %65'i ön kola
+    fore.updateWorldMatrix(true, true);
+    const ax = wpos(hand).sub(wpos(fore)).normalize();
+    const cur = hand.getWorldQuaternion(new THREE.Quaternion());
+    const tCur = H.Tl.clone().applyQuaternion(cur), tWant = H.Tl.clone().applyQuaternion(Qw);
+    tCur.addScaledVector(ax, -tCur.dot(ax)); tWant.addScaledVector(ax, -tWant.dot(ax));
+    if (tCur.lengthSq() > 1e-6 && tWant.lengthSq() > 1e-6) {
+      tCur.normalize(); tWant.normalize();
+      const ang = Math.atan2(tCur.clone().cross(tWant).dot(ax), tCur.dot(tWant));
+      rotWorld(fore, ax, ang * 0.65);
+    }
+    const pq = hand.parent.getWorldQuaternion(new THREE.Quaternion());
+    hand.quaternion.copy(pq.invert().multiply(Qw));
+    hand.updateMatrixWorld(true);
   }
   palmAxis(side) {
     const a = wpos(this.B(`${side}HandIndex1`)), b = wpos(this.B(`${side}HandPinky1`));
     return a.sub(b).normalize();
   }
 
-  curl(side, amount) {
+  /** Parmakları bük: amount genel, opt.index işaret parmağı, opt.thumb başparmak (radyan çarpanı) */
+  curl(side, amount, opt = {}) {
     const B = this.B;
     if (this.isMark) {
       const sg = this.curlSign?.[side];
       if (!sg) return;
-      for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
+      for (const f of [...FINGERS, 'Thumb']) for (let i = 1; i <= 3; i++) {
         const b = B(`${side}Hand${f}${i}`);
-        if (b) b.quaternion.copy(this.fingerBase[b.uuid]);
+        if (b && this.fingerBase[b.uuid]) b.quaternion.copy(this.fingerBase[b.uuid]);
       }
       this.root.updateMatrixWorld(true);
-      for (const f of FINGERS) for (let i = 1; i <= 3; i++) {
-        const b = B(`${side}Hand${f}${i}`);
-        if (b) rotWorld(b, this.palmAxis(side), sg * amount * (i === 1 ? 0.9 : 1.15));
+      const ax = this.palmAxis(side);
+      for (const f of FINGERS) {
+        const a = f === 'Index' && opt.index !== undefined ? opt.index : amount;
+        // serçe ve yüzük parmağı kabzayı biraz daha sıkı sarar
+        const k = f === 'Pinky' ? 1.08 : f === 'Ring' ? 1.04 : 1;
+        for (let i = 1; i <= 3; i++) {
+          const b = B(`${side}Hand${f}${i}`);
+          if (b) rotWorld(b, ax, sg * a * k * (i === 1 ? 0.95 : i === 2 ? 1.2 : 0.85));
+        }
+      }
+      // başparmak: avuca doğru, parmak yönü ekseni etrafında
+      const th = opt.thumb ?? amount * 0.6;
+      const hq = B(`${side}Hand`).getWorldQuaternion(new THREE.Quaternion());
+      const F = this.hand[side].Fl.clone().applyQuaternion(hq);
+      for (let i = 1; i <= 3; i++) {
+        const b = B(`${side}HandThumb${i}`);
+        if (b) rotWorld(b, F, (side === 'Right' ? -1 : 1) * th * (i === 1 ? 0.5 : 0.8));
       }
       return;
     }
@@ -1261,7 +1364,7 @@ function m4Model() {
   m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.userData.sharedGeo = true; } });
   const box = new THREE.Box3().setFromObject(m);
   const c = box.getCenter(V());
-  const L = 0.84, k = L / (box.max.z - box.min.z);
+  const L = 0.78, k = L / (box.max.z - box.min.z), sc = L / 0.84; // asker modelinin kol boyuna göre
   const inner = new THREE.Group();
   m.position.set(-c.x, -c.y, -c.z);
   inner.add(m);
@@ -1273,8 +1376,11 @@ function m4Model() {
   const W = {
     obj,
     buttOffset: L / 2,
-    gripR: V(0, -0.065, 0.21),
-    gripL: V(-0.01, -0.005, -0.12),
+    sc,
+    gripR: V(0, -0.065, 0.21).multiplyScalar(sc),
+    gripL: V(-0.01, -0.005, -0.12).multiplyScalar(sc),
+    // sağ avuç ortası (kabzanın sağ yanı) ve sol el için el kundağı ekseni (silah uzayı)
+    gripLocal: V(0.014, -0.112, 0.113).multiplyScalar(sc),
     muzzle: V(0, 0.03, -L / 2),
   };
   const inv = obj.matrixWorld.clone().invert();

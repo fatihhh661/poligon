@@ -100,6 +100,22 @@ Yeni sistem (`soldier.js`: `stepLoco`, `initFeet`, `planFeet`, `legsTo`):
 - Sonuç: basan ayakta kayma ≈ 0 (ölçüm betiği: ayak modu `plant` iken parmak tabanı hızı).
 - Bulutta GPU yok; görüntüler Düşük kalitede kare kare doğrulandı. **Laptopta gerçek akıcılıkta izlenip ince ayar yapılmalı** (diz bükümü, ayak kaldırma yüksekliği, kalça dönüş sınırı).
 
+## 6. oturum: tüfek tutuşu, duruşlar, bacak açıklığı (27.11.2026, bulut)
+Kullanıcı: el silahın içine giriyor, bacaklar iç içe, koşarken silah/kol duruşu gerçek değil.
+Bulunanlar (ölçüm): sağ el hedefi (`gripR` z=0,21) dipçiğin içindeydi; sol omuz → el kundağı 0,74–0,79 m, kol (omuz→bilek) yalnızca 0,458 m, yani sol el hiç yetişmiyordu; sol elin parmak bükme yönü terstı (avuç açık görünüyordu).
+Yapılanlar (`soldier.js`):
+- `setupCurl`: el çerçevesi (F parmak, T başparmak, P avuç; sağda F×P=T, solda P×F=T) ve doğru bükülme yönü. `curl(side, amount, {index, thumb})`: işaret parmağı nişan dışında tetik dışında düz, başparmak da bükülüyor.
+- `gripHand(side, C, Fw, Pw, pole)`: avuç ortasını silah yüzeyindeki noktaya, eli istenen açıyla oturtur; ön kola %65 burulma verir.
+  - Sağ el: kabza ekseni (aşağı-geri ~37°), `W.gripLocal`.
+  - Sol el: el kundağının altında, avuç yukarı-içe; kolun yetiştiği en öndeki noktayı arar.
+- Tüfek boyu 0,84 → 0,78 m (modelin kısa koluna göre). Tüfekli duruşta gövde ~24° sağa döner (sol omuz önde), baş ileri bakar.
+- Duruşlar:
+  - Dipçik her zaman omuz cebinde.
+  - Alçak hazırda namlu ~28°, yürürken ~19° aşağı.
+  - Koşuda tüfek göğüs önünde çapraz: kabza sağ kalça önünde, namlu sol-aşağı.
+- Bacaklar: ayak merkezi kalçadan en az 11 cm yanda; havadaki ayak diğerinin yanından dışa kavisle geçer; dizler hafif dışa bakar.
+- Doğrulama Düşük kalitede yakın çekim karelerle yapıldı. **Laptopta canlı izlenmeli:** parmakların kavrayışı, sol elin el kundağındaki yeri, gövde dönüş açısı (`bl = -0.42`).
+
 ## Sıradaki iş
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
