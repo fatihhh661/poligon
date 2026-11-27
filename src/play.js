@@ -414,7 +414,8 @@ export class PlayMode {
     const aimNow = this.aiming && running && !(this.stance === 'yuzustu' && f !== 0) && this.reloadU < 0;
     const crouchMv = this.stance === 'diz';
     const sp = this.stance === 'yuzustu' ? 0.55 : crouchMv ? (aimNow ? 0.8 : f > 0 && s === 0 ? 1.2 : 0.95)
-      : aimNow ? 1.0 : k.shift && f > 0 && s === 0 ? 4.2 : k.shift && f > 0 ? 3.0 : f < 0 ? 1.15 : f === 0 && s !== 0 ? 1.3 : 1.6;
+      // gerçekçi taktik hızlar: yürüyüş 1,5; geri geri 0,95 (kısa sık adım); yana 1,15; depar 4,2
+      : aimNow ? 1.0 : k.shift && f > 0 && s === 0 ? 4.2 : k.shift && f > 0 ? 3.0 : f < 0 ? 0.95 : f === 0 && s !== 0 ? 1.15 : 1.5;
     const fwd = V(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const rgt = V(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     const want = fwd.clone().multiplyScalar(f).addScaledVector(rgt, s);
@@ -464,11 +465,12 @@ export class PlayMode {
     // hareket yönü (bacaklara göre): 0 ileri, +90 sol, 180 geri
     const lf = V(-Math.sin(this.lowYaw), 0, -Math.cos(this.lowYaw)), ll = V(-Math.cos(this.lowYaw), 0, Math.sin(this.lowYaw));
     const moveAng = speed > 0.05 ? (Math.atan2(this.vel.dot(ll), this.vel.dot(lf)) * 180) / Math.PI : 0;
-    const locoSpeed = this.stance === 'ayakta' ? Math.max(speed, Math.min(0.9, turnStep * 0.35)) : speed;
+    // ayak kilitli yürüyüş motorunda yerinde dönüşü bacaklar kendisi adım atarak yapar
+    const locoSpeed = this.stance === 'ayakta' && !this.rig.feet ? Math.max(speed, Math.min(0.9, turnStep * 0.35)) : speed;
     const fwdComp = this.vel.dot(fwd);
     const mvs = fwdComp < -0.2 && Math.abs(this.vel.dot(rgt)) < 0.5 ? -speed : speed;
     this.rig.setMove(mvs);
-    Object.assign(this.rig.state, { locoSpeed, locoAng: turnStep > 0.05 && speed < 0.3 ? 0 : moveAng, twist, exert: this.exert, turnVel: this.turnVel, groundY: 0.015 });
+    Object.assign(this.rig.state, { locoSpeed, locoAng: turnStep > 0.05 && speed < 0.3 && !this.rig.feet ? 0 : moveAng, twist, exert: this.exert, turnVel: this.turnVel, groundY: 0.015 });
     // şarjör değiştirme ilerlemesi
     if (this.reloadU >= 0 && running) {
       this.reloadU += dt / this.reloadDur;

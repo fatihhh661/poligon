@@ -359,6 +359,7 @@ export class Rig {
         const c = o.children.find((x) => x.isBone);
         if (c) this.jiggle.push({ b: o, c, q0: o.quaternion.clone(), p: null, v: V() });
       });
+      this.initFeet();
     } else {
       this.cur = this.actions.Idle || null;
       if (this.cur) this.cur.play();
@@ -405,38 +406,330 @@ export class Rig {
     if (this.cur) this.cur.timeScale = ts;
   }
 
-  /** Hareket karıştırma: hıza ve yöne göre 6 gerçek hareket kaydı, adım fazı senkronlu */
+  /**
+   * Yürüyüş motoru (oyunlardaki "stride warping + orientation warping + foot locking" yaklaşımı):
+   *  - Hız → gerçek insan adım sıklığı (kadans) → istenen adım boyu. Kaydın adım boyu IK ile
+   *    bu boya esnetilir; faz ilerlemesi buna göre ayarlandığı için basan ayak yerde kaymaz.
+   *  - Kalça gidilen yöne en fazla ~50° döner (gövde nişanda kalır); kalan açı adım yönünü döndürür.
+   *    Yan adım kayıtları (çok kısa ve kaygan) artık kullanılmaz.
+   *  - Geri yürüyüşte kısa ve sık adımlar.
+   */
   stepLoco(dt) {
     const s = this.state, L = this.loco, A_ = this.actions;
-    const sp = s.stance === 'ayakta' || s.stance === 'diz' ? s.locoSpeed || 0 : 0;
-    const a = ((s.locoAng || 0) * Math.PI) / 180;
-    const locoW = smooth01(sp / 0.45);
-    let wF = Math.max(0, Math.cos(a)), wB = Math.max(0, -Math.cos(a)), wL = Math.max(0, Math.sin(a)), wR = Math.max(0, -Math.sin(a));
-    const sum = wF + wB + wL + wR || 1;
-    wF /= sum; wB /= sum; wL /= sum; wR /= sum;
-    const runK = smooth01((sp - 2.3) / 1.3);
-    const tgt = { Idle: 1 - locoW, Walk: locoW * wF * (1 - runK), Run: locoW * wF * runK, WalkBack: locoW * wB, StrafeL: locoW * wL, StrafeR: locoW * wR };
-    const k = dt > 0 ? 1 - Math.exp(-dt * 9) : 1;
-    let strideSum = 0, wsum = 0;
+    const legs = s.stance === 'ayakta' || s.stance === 'diz';
+    const sp = legs ? s.locoSpeed || 0 : 0;
+    const wrap = (x) => ((((x + 180) % 360) + 360) % 360) - 180;
+    const a = wrap(s.locoAng || 0);
+    if (L.hemi === undefined) { L.hemi = 1; L.theta = 0; L.rho = 0; L.warp = 1; L.prevSp = 0; }
+    // ileri / geri yarım küre (histerezisli: yana yürürken kalça sağa-sola atlamaz)
+    if (sp > 0.1) { if (L.hemi > 0 && Math.abs(a) > 118) L.hemi = -1; else if (L.hemi < 0 && Math.abs(a) < 95) L.hemi = 1; }
+    const rel = L.hemi > 0 ? a : wrap(a - 180);
+    const lim = s.stance === 'diz' ? 40 : 50;
+    const thT = Math.max(-lim, Math.min(lim, rel)) * smooth01(sp / 0.6);
+    const kt = dt > 0 ? 1 - Math.exp(-dt * 7) : 1;
+    L.theta += (thT - L.theta) * kt;
+    L.rho = wrap(rel - L.theta);
+    const locoW = smooth01(sp / 0.35);
+    const runK = s.stance === 'diz' ? 0 : smooth01((sp - 2.3) / 1.3);
+    const fw = L.hemi > 0 ? 1 : 0;
+    const tgt = { Idle: 1 - locoW, Walk: locoW * fw * (1 - runK), Run: locoW * fw * runK, WalkBack: locoW * (1 - fw), StrafeL: 0, StrafeR: 0 };
+    const k = dt > 0 ? 1 - Math.exp(-dt * 10) : 1;
+    let S0 = 0, ws = 0;
     for (const n in tgt) {
       if (!A_[n]) continue;
       L.w[n] += (tgt[n] - L.w[n]) * k;
       A_[n].setEffectiveWeight(L.w[n]);
-      if (n !== 'Idle') {
-        const u = A_[n].getClip().userData;
-        const kk = Math.min(1.6, Math.max(0.85, Math.sqrt(sp / Math.max(0.2, u.speed))));
-        strideSum += L.w[n] * u.stride * kk; wsum += L.w[n];
-      }
+      if (n !== 'Idle' && L.w[n] > 1e-3) { S0 += L.w[n] * A_[n].getClip().userData.stride; ws += L.w[n]; }
     }
-    if (wsum > 0.001 && sp > 0.02) L.phase = (L.phase + (sp * dt) / (strideSum / wsum)) % 1;
+    S0 = ws > 1e-3 ? S0 / ws : A_.Walk.getClip().userData.stride;
+    // kadans (çevrim/sn = adım/dk ÷ 120): yürüyüş 1,0 m/sn ≈ 101, 1,5 ≈ 113; koşu 3 ≈ 163, 4 ≈ 176;
+    // geri geri yürürken kısa ve sık adım; çömelik yürüyüşte daha ağır
+    const cWalk = s.stance === 'diz' ? 0.55 + 0.22 * sp : 0.62 + 0.22 * sp;
+    const cRun = 1.05 + 0.11 * sp;
+    let c = L.hemi > 0 ? cWalk + (cRun - cWalk) * runK : 0.75 + 0.3 * sp;
+    let w = sp / Math.max(1e-3, c * S0);
+    const wMax = 1.45;
+    if (w > wMax) { w = wMax; c = sp / (w * S0); }
+    L.warp = w;
+    L.cad = c;
+    // kalkış: geride kalan ayağın parmak kalkışından başla (ilk adımı o atar)
+    if (L.prevSp < 0.05 && sp >= 0.05 && this.feet && L.w.Idle > 0.8) L.phase = this.startPhase(L.hemi > 0 ? 'Walk' : 'WalkBack', a);
+    L.prevSp = sp;
+    if (sp > 0.02) L.phase = (L.phase + c * dt) % 1;
     for (const n in tgt) {
       const act = A_[n];
       if (!act) continue;
-      const c = act.getClip();
-      if (n === 'Idle') { L.idleT = (L.idleT + dt) % c.duration; act.time = L.idleT; }
-      else act.time = ((L.phase + c.userData.ph0) % 1) * c.duration;
+      const cl = act.getClip();
+      if (n === 'Idle') { L.idleT = (L.idleT + dt) % cl.duration; act.time = L.idleT; }
+      else act.time = ((L.phase + cl.userData.ph0) % 1) * cl.duration;
     }
     this.mixer.update(0);
+  }
+
+  /** Kayıtlardan ayak temas tablosu: her klip için faza göre topuk yerde mi (64 örnek) */
+  initFeet() {
+    const A_ = this.actions, L = this.loco, g = this.group, N = 64;
+    this.contact = {};
+    this.toeOff = {};
+    this.land = {};
+    this.cfrac = {};
+    this.hipAvg = {};
+    const saved = { ...L.w };
+    g.updateMatrixWorld(true);
+    for (const n of ['Walk', 'Run', 'WalkBack']) {
+      const act = A_[n];
+      if (!act) continue;
+      for (const m in A_) A_[m].setEffectiveWeight(m === n ? 1 : 0);
+      const cl = act.getClip(), hs = { Left: [], Right: [] };
+      for (let i = 0; i < N; i++) {
+        act.time = ((i / N + cl.userData.ph0) % 1) * cl.duration;
+        this.mixer.update(0);
+        this.root.updateMatrixWorld(true);
+        const hp = g.worldToLocal(wpos(this.B('Hips')));
+        hs.hy = (hs.hy || 0) + hp.y / N;
+        for (const side of ['Left', 'Right']) {
+          const fpL = g.worldToLocal(wpos(this.B(side + 'Foot')));
+          hs[side].push(fpL.y); // temas: bilek alçakta (topuk yerde ya da ayak düz)
+          (hs[side + 'Z'] ||= []).push((n === 'WalkBack' ? 1 : -1) * (fpL.z - hp.z));
+          (hs[side + 'X'] ||= []).push(fpL.x - hp.x);
+        }
+      }
+      this.contact[n] = {}; this.toeOff[n] = {};
+      for (const side of ['Left', 'Right']) {
+        const h = hs[side], mn = Math.min(...h), mx = Math.max(...h);
+        const thr = mn + Math.max(0.018, (mx - mn) * 0.16);
+        const t = h.map((y) => (y < thr ? 1 : 0));
+        this.contact[n][side] = t;
+        let off = 0;
+        for (let i = 0; i < N; i++) if (t[i] && !t[(i + 1) % N]) { off = (i + 1) / N; break; }
+        this.toeOff[n][side] = off;
+        // iniş anında ayağın kalçaya göre yeri (adım yönünde ve yanda)
+        let i0 = 0;
+        for (let i = 0; i < N; i++) if (t[i] && !t[(i + N - 1) % N]) { i0 = i; break; }
+        (this.land[n] ||= {})[side] = { along: hs[side + 'Z'][i0], lat: hs[side + 'X'][i0] };
+        this.cfrac[n] = (this.cfrac[n] || 0) + t.reduce((x, y) => x + y, 0) / N / 2;
+      }
+      this.hipAvg[n] = hs.hy;
+    }
+    // dururkenki kalça yüksekliği: kayıtlar modele göre alçak; yürürken kalça ayaktakinden ~2 cm,
+    // koşarken ~4,5 cm aşağıda olmalı (yoksa dizler sürekli bükük, çömelik yürüyüş)
+    {
+      const act = A_.Idle, cl = act.getClip();
+      for (const m in A_) A_[m].setEffectiveWeight(m === 'Idle' ? 1 : 0);
+      let hy = 0;
+      for (let i = 0; i < 16; i++) { act.time = (i / 16) * cl.duration; this.mixer.update(0); this.root.updateMatrixWorld(true); hy += g.worldToLocal(wpos(this.B('Hips'))).y / 16; }
+      this.hipOff = {};
+      for (const n in this.hipAvg) this.hipOff[n] = hy - this.hipAvg[n] - (n === 'Run' ? 0.06 : 0.03);
+    }
+    for (const m in A_) A_[m].setEffectiveWeight(saved[m] || 0);
+    this.mixer.update(0);
+    const len = (a, b) => wpos(this.B(a)).distanceTo(wpos(this.B(b)));
+    this.legLen = len('LeftUpLeg', 'LeftLeg') + len('LeftLeg', 'LeftFoot');
+    this.feet = { Left: { mode: 'init' }, Right: { mode: 'init' } };
+    this._drop = 0;
+    this._gv = V();
+  }
+
+  /** O an basan ayağın temas değeri (karışan kliplerin ağırlıklı ortalaması, 0..1) */
+  contactAt(side) {
+    const L = this.loco, N = 64, i = Math.floor(((L.phase % 1) + 1) % 1 * N) % N;
+    let c = 0, w = 0;
+    for (const n of ['Walk', 'Run', 'WalkBack']) if (this.contact[n] && L.w[n] > 1e-3) { c += L.w[n] * this.contact[n][side][i]; w += L.w[n]; }
+    return w > 1e-3 ? c / w : 1;
+  }
+
+  /** Karışan kliplere göre kalça yükseklik düzeltmesi */
+  hipLift() {
+    const L = this.loco;
+    let h = 0;
+    for (const n in this.hipOff) h += (L.w[n] || 0) * this.hipOff[n];
+    return h;
+  }
+
+  /** Bu ayağın bir sonraki yere basışına kalan faz (0..1) */
+  phaseToContact(side) {
+    const L = this.loco, N = 64;
+    const i0 = Math.floor(((L.phase % 1) + 1) % 1 * N);
+    for (let k = 1; k <= N; k++) {
+      const i = (i0 + k) % N;
+      let c = 0, w = 0;
+      for (const n of ['Walk', 'Run', 'WalkBack']) if (this.contact[n] && L.w[n] > 1e-3) { c += L.w[n] * this.contact[n][side][i]; w += L.w[n]; }
+      if (w > 1e-3 && c / w > 0.5) return k / N;
+    }
+    return 0.5;
+  }
+
+  /** Kayıttaki iniş noktası (kalçaya göre), karışan kliplerin ağırlıklı ortalaması */
+  landOffset(side) {
+    const L = this.loco;
+    let l = 0, fc = 0, w = 0;
+    for (const n of ['Walk', 'Run', 'WalkBack']) if (this.land[n] && L.w[n] > 1e-3) { l += L.w[n] * this.land[n][side].lat; fc += L.w[n] * this.cfrac[n]; w += L.w[n]; }
+    return w > 1e-3 ? { lat: l / w, fc: fc / w } : { lat: side === 'Left' ? -0.1 : 0.1, fc: 0.6 };
+  }
+
+  startPhase(clip, ang) {
+    const F = this.feet, T = this.toeOff[clip];
+    if (!T) return this.loco.phase;
+    // hareket yönüne göre daha geride kalan ayak önce kalkar
+    let side = 'Left';
+    if (F.Left.lock && F.Right.lock) {
+      const yaw = this.groupYaw() + (ang * Math.PI) / 180;
+      const d = V(-Math.sin(yaw), 0, -Math.cos(yaw));
+      side = F.Left.lock.dot(d) < F.Right.lock.dot(d) ? 'Left' : 'Right';
+    }
+    return (T[side] - 0.03 + 1) % 1;
+  }
+
+  groupYaw() {
+    const f = V(0, 0, -1).transformDirection(this.group.matrixWorld);
+    return Math.atan2(-f.x, -f.z);
+  }
+
+  /**
+   * Ayak hedefleri (dünya uzayı). Kayıttaki ayak yolu kalçaya göre adım yönünde esnetilip
+   * döndürülür; basan ayak yere kilitlenir (kaymaz), kalkınca yumuşakça serbest kalır.
+   * Dururken ayaklar yerinde kalır; kalça dönünce ya da ayak duruşu bozulunca asker
+   * ayak atarak düzeltir (yerinde dönüş de böyle olur).
+   */
+  planFeet(dt) {
+    const L = this.loco, B = this.B, s = this.state, F = this.feet;
+    const root = this.root, g = this.group;
+    root.updateMatrixWorld(true);
+    const up = V(0, 1, 0);
+    const rf = V(0, 0, -1).transformDirection(root.matrixWorld); rf.y = 0; rf.normalize();
+    const t0 = rf.clone().multiplyScalar(L.hemi > 0 ? 1 : -1);
+    const tr = t0.clone().applyAxisAngle(up, (L.rho * Math.PI) / 180);
+    const hip = wpos(B('Hips')); hip.y = 0;
+    const gy = (s.groundY ?? 0.015) + this.ankleH;
+    const out = {};
+    const yawOf = (v) => Math.atan2(v.x, v.z);
+    const wrapA = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+    // grup bir karede çok yer değiştirdiyse (ışınlama, tekrar izlemede atlama, duruş değişimi) sıfırla
+    const gp = wpos(g);
+    const reset = !dt || !this._lastGP || gp.distanceTo(this._lastGP) > 0.6 || this._feetStance !== s.stance;
+    if (!reset) { const v = gp.clone().sub(this._lastGP).divideScalar(dt); v.y = 0; this._gv.lerp(v, 1 - Math.exp(-dt * 12)); }
+    else this._gv.set(0, 0, 0);
+    this._lastGP = gp; this._feetStance = s.stance;
+    const rr = V(1, 0, 0).transformDirection(root.matrixWorld); rr.y = 0; rr.normalize();
+    const kneel = s.stance === 'diz' && (this._cw || 0) < 0.6;
+    const moving = (1 - L.w.Idle) > 0.3 && (s.locoSpeed || 0) > 0.05 && !kneel;
+    for (const side of ['Left', 'Right']) {
+      const foot = B(side + 'Foot'), toe = B(side + 'ToeBase');
+      const fp = wpos(foot), tp = wpos(toe), q = foot.getWorldQuaternion(new THREE.Quaternion());
+      const fyaw = yawOf(tp.clone().sub(fp));
+      const vat = fp.clone().sub(tp); vat.y = 0; // ayak bileği, parmak tabanına göre (kayıttaki topuk kalkışı dahil)
+      // ayak yönü fy iken bileğin parmak tabanına göre yeri
+      const rv = (fy) => vat.clone().applyAxisAngle(up, wrapA(fy - fyaw));
+      const toeOf = (ankle, fy) => ankle.clone().sub(rv(fy));
+      // esnetilmiş hedef (kayıttaki bilek yolu, adım yönüne döndürülüp boyu ayarlanmış)
+      const d = fp.clone(); d.y = 0; d.sub(hip);
+      const along = d.dot(t0);
+      const lat = d.clone().addScaledVector(t0, -along);
+      const w = moving ? L.warp : Math.min(1, L.warp);
+      const wp = hip.clone().add(lat).addScaledVector(tr, along * w);
+      wp.y = Math.max(fp.y, gy);
+      const yawW = fyaw + ((L.rho * Math.PI) / 180) * 0.6; // ayak ucu adım yönüne kısmen döner
+      const f = F[side];
+      // kilitli ayakta parmak tabanı yerde sabit; bilek, topuk kalkışıyla onun etrafında döner
+      const lockedAnkle = () => { const a = f.lock.clone().add(rv(f.lockYaw)); a.y = wp.y; return a; };
+      const plantAt = (ankle, fy) => { f.mode = 'plant'; f.lock = toeOf(ankle, fy); f.lock.y = 0; f.lockYaw = fy; };
+      if (reset || f.mode === 'init' || kneel) plantAt(wp, yawW);
+      else if (moving) {
+        const c = this.contactAt(side) > 0.5;
+        if (f.mode === 'step') { f.mode = 'swing'; f.from = f.cur.clone(); f.fromYaw = f.curYaw; f.ps = L.phase; }
+        if (c && f.mode !== 'plant') plantAt(f.cur || wp, f.curYaw ?? yawW);
+        else if (!c && f.mode === 'plant') { const a = lockedAnkle(); f.mode = 'swing'; f.from = a; f.fromYaw = f.lockYaw; f.ps = L.phase; }
+        if (f.mode === 'plant' && lockedAnkle().distanceTo(wp) > 0.8) { f.mode = 'swing'; f.from = lockedAnkle(); f.fromYaw = f.lockYaw; f.ps = (L.phase + 0.98) % 1; }
+      } else {
+        // duruş: havadaki ayak yere iner, gerekirse düzeltme adımı
+        if (f.mode === 'swing') { f.mode = 'step'; f.u = 0; f.from = f.cur.clone(); f.fromYaw = f.curYaw; f.dur = 0.22; }
+        if (f.mode === 'plant') {
+          const la = lockedAnkle();
+          const err = Math.hypot(la.x - wp.x, la.z - wp.z), yerr = Math.abs(wrapA(f.lockYaw - yawW));
+          f.err = err;
+          const o = F[side === 'Left' ? 'Right' : 'Left'];
+          const otherBusy = o.mode === 'step' && o.u < 0.65;
+          if ((err > 0.13 || yerr > 0.55) && !otherBusy && (o.mode !== 'plant' || err >= (o.err || 0) - 0.02)) {
+            f.mode = 'step'; f.u = 0; f.from = la; f.fromYaw = f.lockYaw; f.dur = 0.3;
+          }
+        }
+      }
+      // hedefi uygula
+      let pos, fy;
+      if (f.mode === 'plant') { pos = lockedAnkle(); fy = f.lockYaw; }
+      else if (f.mode === 'swing') {
+        // havadaki ayak: kalktığı noktadan, kalçanın o anda varacağı yere göre öngörülen iniş noktasına.
+        // Yükseklik eğrisi kayıttan (doğal ayak kaldırma); yatay yol yumuşak hızlanıp yavaşlar.
+        const rem = this.phaseToContact(side), el = (((L.phase - f.ps) % 1) + 1) % 1;
+        const u = Math.min(1, el / Math.max(1e-3, el + rem));
+        const lo = this.landOffset(side);
+        // iniş: basış süresince alınacak yolun ~%42'si kalçanın önünde (insan yürüyüşü/koşusu oranı)
+        const S = (s.locoSpeed || 0) / Math.max(0.2, L.cad || 1);
+        const land = hip.clone().addScaledVector(this._gv, rem / Math.max(0.2, L.cad || 1))
+          .addScaledVector(rr, lo.lat).addScaledVector(tr, 0.42 * lo.fc * S);
+        const kk = u * u * (3 - 2 * u);
+        pos = f.from.clone().lerp(land, kk); pos.y = wp.y;
+        fy = f.fromYaw + wrapA(yawW - f.fromYaw) * kk;
+      } else { // düzeltme adımı
+        f.u = Math.min(1, f.u + dt / (f.dur || 0.3));
+        const kk = smooth01(f.u);
+        pos = f.from.clone().lerp(wp, kk);
+        pos.y = Math.max(gy, wp.y) + Math.sin(Math.PI * f.u) * 0.075;
+        fy = f.fromYaw + wrapA(yawW - f.fromYaw) * kk;
+        if (f.u >= 1) plantAt(wp, yawW);
+      }
+      f.cur = pos.clone(); f.curYaw = fy; f.wp = wp;
+      // ayak yönü: kayıttaki topuk-parmak yuvarlanması korunur, yalnızca dikey eksende düzeltilir
+      const qd = new THREE.Quaternion().setFromAxisAngle(up, wrapA(fy - fyaw)).multiply(q);
+      out[side] = { p: pos, q: qd, yaw: fy, toe: f.mode === 'plant' ? V(f.lock.x, (s.groundY ?? 0.015) + 0.035, f.lock.z) : null };
+    }
+    return out;
+  }
+
+  /** Bacakları ayak hedeflerine IK ile götür; ayak yönünü uygula. Gerekirse kalçayı indir. */
+  legsTo(T, dt, baseY) {
+    const B = this.B, root = this.root, up = V(0, 1, 0);
+    root.updateMatrixWorld(true);
+    // kalça yüksekliği bacaklardan (ters sarkaç): basan bacak ortada neredeyse düz, iki ayak yerdeyken
+    // kalça en alçakta. Basan ayakta topuk kalkabildiği için geride kalınca parmak tabanı yeterli.
+    root.position.y = baseY;
+    root.updateMatrixWorld(true);
+    const reach = this.legLen * 0.985, gy0 = (this.state.groundY ?? 0.015) + this.ankleH;
+    const liftFor = (u, t, R) => { const hd = Math.hypot(u.x - t.x, u.z - t.z); return hd >= R ? -0.12 : t.y + Math.sqrt(R * R - hd * hd) - u.y; };
+    let lift = 0.06;
+    for (const side of ['Left', 'Right']) {
+      const u = wpos(B(side + 'UpLeg')), Tt = T[side];
+      if (Tt.toe) lift = Math.min(lift, Math.max(liftFor(u, Tt.p, this.legLen * 0.99), liftFor(u, Tt.toe, this.legLen * 0.99 + 0.1)));
+      else if (Tt.p.y < gy0 + 0.04) lift = Math.min(lift, liftFor(u, Tt.p, this.legLen * 0.99));
+    }
+    const want = Math.max(-0.1, lift);
+    const k = dt > 0 ? 1 - Math.exp(-dt * (want < this._drop ? 30 : 14)) : 1;
+    this._drop += (want - this._drop) * k;
+    root.position.y = baseY + this._drop;
+    this.group.updateMatrixWorld(true);
+    const rf = V(0, 0, -1).transformDirection(root.matrixWorld); rf.y = 0; rf.normalize();
+    for (const side of ['Left', 'Right']) {
+      const ul = B(side + 'UpLeg'), foot = B(side + 'Foot');
+      // diz yönü: kalçanın baktığı yön ile ayak ucunun ortası
+      const ff = V(Math.sin(T[side].yaw), 0, Math.cos(T[side].yaw));
+      const kd = rf.dot(ff) > -0.2 ? rf.clone().add(ff).normalize() : rf.clone();
+      const pole = wpos(ul).add(T[side].p).multiplyScalar(0.5).addScaledVector(kd, 1.2).addScaledVector(up, 0.1);
+      // topuk kalkışı: basan ayak geride kalıp bacak boyu yetmeyince ayak parmak tabanı
+      // etrafında döner, topuk kalkar (gerçek yürüyüşteki itiş anı)
+      let p = T[side].p, qf = T[side].q;
+      const toeP = T[side].toe, reach = this.legLen * 0.985, ulp = wpos(ul);
+      if (toeP && ulp.distanceTo(p) > reach) {
+        const v0 = p.clone().sub(toeP), ax = up.clone().cross(ff).normalize();
+        let lo = 0, hi = 1.25;
+        for (let it = 0; it < 14; it++) { const m = (lo + hi) / 2; if (ulp.distanceTo(toeP.clone().add(v0.clone().applyAxisAngle(ax, m))) > reach) lo = m; else hi = m; }
+        p = toeP.clone().add(v0.clone().applyAxisAngle(ax, hi));
+        qf = new THREE.Quaternion().setFromAxisAngle(ax, hi).multiply(qf);
+      }
+      twoBoneIK(ul, B(side + 'Leg'), foot, p, pole);
+      const pq = foot.parent.getWorldQuaternion(new THREE.Quaternion());
+      foot.quaternion.copy(pq.invert().multiply(qf));
+      foot.updateMatrixWorld(true);
+    }
   }
 
   update(dt) {
@@ -451,6 +744,9 @@ export class Rig {
     }
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
+    // kalça gidilen yöne döner (gövde silah duruşu katmanında nişana geri döner)
+    const legsMode = this.mocap && this.feet && (s.stance === 'ayakta' || s.stance === 'diz');
+    if (legsMode) root.rotation.y = ((this.loco.theta || 0) * Math.PI) / 180;
     g.updateMatrixWorld(true);
     const L = (x, y, z) => g.localToWorld(V(x, y, z));
     const toL = (v) => g.worldToLocal(v.clone());
@@ -510,19 +806,25 @@ export class Rig {
       const moving = this.mocap && (s.locoSpeed || 0) > 0.15;
       this._cw = dt > 0 ? THREE.MathUtils.lerp(this._cw || 0, moving ? 1 : 0, 1 - Math.exp(-dt * 7)) : (moving ? 1 : 0);
       const cw = this._cw;
-      const fl0 = wpos(B('LeftFoot')), fr0 = wpos(B('RightFoot'));
+      const FT = legsMode ? this.planFeet(dt) : null;
+      const fl0 = FT ? FT.Left.p : wpos(B('LeftFoot')), fr0 = FT ? FT.Right.p : wpos(B('RightFoot'));
       root.position.y = THREE.MathUtils.lerp(-0.46, -0.33, cw);
       g.updateMatrixWorld(true);
       twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.12, 0.1, -0.42).lerp(fl0, cw), L(-0.12, 0.6, -1.5).lerp(L(-0.18, 0.4, -1.3), cw));
       twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42).lerp(fr0, cw), L(0.14, -1, -0.4).lerp(L(0.18, 0.4, -1.3), cw));
+      if (FT && cw > 0.5) for (const side of ['Left', 'Right']) { const f = B(side + 'Foot'), pq = f.parent.getWorldQuaternion(new THREE.Quaternion()); f.quaternion.copy(pq.invert().multiply(FT[side].q)); f.updateMatrixWorld(true); }
       if (cw < 0.99) rotWorld(B('RightFoot'), right, -0.9 * (1 - cw));
       rotWorld(spine, right, 0.12);
     } else if (this.isMark) {
       // taktik yürüyüş: hareket ederken dizler bükülür (ayaklar yerde kilitli), gövde hafif öne
       const mv = Math.min(1, s.move || 0);
-      if (mv > 0.01) {
+      if (legsMode) {
+        // ayaklar yere basıp kilitlenir; hafif bükük diz yürürken
+        const FT = this.planFeet(dt);
+        this.legsTo(FT, dt, this.hipLift() - 0.012 * mv);
+      } else if (mv > 0.01) {
         const fl = wpos(B('LeftFoot')), fr = wpos(B('RightFoot'));
-        root.position.y = -0.04 * mv; // hafif bükük diz (eskiden 8,5 cm: sürekli çömelik görünüyordu)
+        root.position.y = -0.04 * mv;
         g.updateMatrixWorld(true);
         twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), fl, L(-0.12, 0.45, -1.3));
         twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), fr, L(0.12, 0.45, -1.3));
@@ -534,7 +836,7 @@ export class Rig {
       rotWorld(spine1, up, 0.12);
     }
     // ayak-zemin: ayaklar zeminin altına girmez
-    if (this.mocap && s.stance === 'ayakta') {
+    if (this.mocap && s.stance === 'ayakta' && !legsMode) {
       g.updateMatrixWorld(true);
       const gy = (s.groundY ?? 0.015) + this.ankleH;
       for (const [side, sx] of [['Left', -1], ['Right', 1]]) {

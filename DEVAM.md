@@ -87,6 +87,19 @@ Kullanıcı fotoğraflarla şikâyet etti: sola eğilince asker hedefi kapatıyo
 - **Nişangâh**: ekran merkezinde sabit ve beyaz. Mermi göz/namlu hattından gider; engel varsa çarpacağı yerde küçük kırmızı daire+X uyarısı.
 - **Tekrar izleme hatası (önceden vardı)**: "Yeniden Başla"dan sonra `_lastSnap` sıfırlanmadığı için kayıt tutulmuyordu. Kayda depar/ivme alanları eklendi (eski kayıtlar da okunur).
 
+## 5. oturum: gerçekçi yürüyüş motoru (27.11.2026, bulut)
+Kullanıcı: "yürümesinin gerçeklik ile alakası yok". Ölçüm (ayak yere basarken kayma hızı): eski sistemde 0,24–1,4 m/sn (yana ve çaprazda en kötü). Sebep: oyun hızları ile CMU kayıtlarının adım boyları uyuşmuyordu (yan adım kaydı 0,47 m/sn iken oyunda 1,3 m/sn; kadans yapay olarak 1,6 katına çıkıyordu).
+Yeni sistem (`soldier.js`: `stepLoco`, `initFeet`, `planFeet`, `legsTo`):
+- **Kadans tablosu** (gerçek insan verisi): hız → adım/dk → istenen adım boyu → adım esnetme (`loco.warp`).
+- **Kalça yön dönüşü**: kalça gidilen yöne en fazla 50° döner (`loco.theta`, histerezisli ileri/geri yarım küre), kalan açı adım yönünü döndürür. Yan adım klipleri (StrafeL/R) artık kullanılmıyor.
+- **Ayak kilidi**: temas kayıttaki bilek yüksekliğinden (`contact` tablosu, 64 örnek). Basan ayağın parmak tabanı yere kilitlenir; havadaki ayak kalktığı yerden, kalçanın varacağı yere göre öngörülen iniş noktasına gider (iniş, basış yolunun %42'si önde). Yükseklik eğrisi kayıttan.
+- **Topuk kalkışı**: geride kalan ayak bacak boyunu aşınca parmak tabanı etrafında döner.
+- **Kalça yüksekliği bacaklardan** (ters sarkaç): basan bacak ortada ~%99 düz, çift destekte kalça alçalır. `hipOff`: kayıtların kalçası modele göre alçaktı (çömelik yürüyüş).
+- **Duruş ve yerinde dönüş**: ayaklar yerde kalır, kalça dönünce ya da ayak duruşu bozulunca düzeltme adımı atılır (`play.js` artık dönüşte yürüyüş klibini zorlamıyor).
+- Hızlar: yürüyüş 1,5; geri 0,95; yana 1,15 (önce 1,6 / 1,15 / 1,3). Depar 4,2 aynı.
+- Sonuç: basan ayakta kayma ≈ 0 (ölçüm betiği: ayak modu `plant` iken parmak tabanı hızı).
+- Bulutta GPU yok; görüntüler Düşük kalitede kare kare doğrulandı. **Laptopta gerçek akıcılıkta izlenip ince ayar yapılmalı** (diz bükümü, ayak kaldırma yüksekliği, kalça dönüş sınırı).
+
 ## Sıradaki iş
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
