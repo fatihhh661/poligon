@@ -131,7 +131,16 @@ function createWindow() {
     });
     if (r === 1) e.preventDefault();
   });
-  win.on('closed', () => log('Pencere kapatıldı'));
+  // Açılış sürerken pencere kullanıcı tarafından normal kapatılırsa bu çökme sayılmaz: eskiden "yarım kaldı"
+  // işareti kalıyor, sonraki açılış kalıcı uyumluluk moduna (yazılım çizimi) düşüyordu. Pencere yanıt
+  // vermiyorken (ekran kartı donması) kapatılırsa işaret kalır ve sonraki açılış güvenli modda olur.
+  let hung = false;
+  win.on('unresponsive', () => { hung = true; log('Pencere yanıt vermiyor'); });
+  win.on('responsive', () => { hung = false; });
+  win.on('closed', () => {
+    log('Pencere kapatıldı' + (!booted ? (hung ? ' (açılış sırasında, yanıt vermiyordu)' : ' (açılış sırasında)') : ''));
+    if (!booted && !hung) saveState({ pending: false });
+  });
 }
 
 const docs = () => app.getPath('documents');
