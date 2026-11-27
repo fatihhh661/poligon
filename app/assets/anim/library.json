@@ -1,0 +1,62 @@
+{
+  "active": "100style-neutral",
+  "libraries": {
+    "100style-neutral": {
+      "file": "assets/anim/lib/100style-neutral.json",
+      "source": {
+        "name": "100STYLE Dataset — Neutral (koşu: Rushed)",
+        "author": "Ian Mason, Sebastian Starke, Taku Komura",
+        "license": "CC BY 4.0",
+        "url": "https://zenodo.org/records/8127870",
+        "attribution": "The 100STYLE Dataset - Ian Mason (CC BY 4.0)",
+        "capture": "Xsens, 60 fps, tek oyuncu (182 cm)",
+        "note": "Ham BVH dosyaları depoya girmez; 100STYLE.zip içindeki 100STYLE/Neutral klasörü ve 100STYLE/Rushed/Rushed_FR.bvh tek klasöre konur. Neutral koşusu 1,9 m/sn tempo koşusu olduğundan koşu için aynı oyuncunun daha hızlı ve öne eğik Rushed koşusu (2,6 m/sn) kullanılır. Pencereler Frame_Cuts.csv aralığındadır."
+      },
+      "fps": 60,
+      "torso": 0.45,
+      "clips": {
+        "Idle": {
+          "dur": 12.0002,
+          "speed": 0,
+          "stride": 0,
+          "frames": 721,
+          "file": "Neutral_ID.bvh",
+          "t0": 12,
+          "t1": 24,
+          "loopErr": 0
+        },
+        "Walk": {
+          "dur": 1.3667,
+          "speed": 0.861,
+          "stride": 1.177,
+          "frames": 83,
+          "file": "Neutral_FW.bvh",
+          "t0": 19.484,
+          "t1": 20.85,
+          "loopErr": 0.0394
+        },
+        "Run": {
+          "dur": 0.6833,
+          "speed": 2.606,
+          "stride": 1.781,
+          "frames": 42,
+          "file": "Rushed_FR.bvh",
+          "t0": 38.084,
+          "t1": 38.767,
+          "loopErr": 0.2019
+        },
+        "WalkBack": {
+          "dur": 1.2,
+          "speed": 0.755,
+          "stride": 0.907,
+          "frames": 73,
+          "file": "Neutral_BW.bvh",
+          "t0": 8.6,
+          "t1": 9.8,
+          "loopErr": 0.0629
+        }
+      },
+      "imported": "2026-11-27"
+    }
+  }
+}

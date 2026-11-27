@@ -5,7 +5,7 @@
 // Çalışma zamanındaki yürüyüş motoru (soldier.js) kaynağı fark etmeden aynı klip anahtarlarını
 // (Idle, Walk, Run, WalkBack ...) kullanır; kütüphane yoksa ya da bozuksa eski mocap.json devrede kalır.
 //
-// Kullanım:  node scripts/import-anim.mjs scripts/anim-sources/100style-neutral.json
+// Kullanım:  node scripts/import-anim.mjs scripts/anim-sources/100style-neutral.json <ham-kayıt-klasörü>
 import * as THREE from 'three';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 import fs from 'node:fs';
@@ -79,12 +79,22 @@ function buildClip(M, sp, outFps) {
   if (!sp.idle) {
     best = 1e9;
     const legNames = names.filter((x) => LEGS.includes(M.nm(x).replace('mixamorig', '')));
+    const yawAt = (i) => { const f = M.fwd.clone().applyQuaternion(Q(hipName, i)); return Math.atan2(f.x, f.z); };
+    const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
     for (let s = i0; s < i1; s += 2) for (let l = Math.round(sp.L[0] * fps); l <= Math.round(sp.L[1] * fps) && s + l <= i1; l++) {
       let c = 0;
       for (const b of legNames) c += 1 - Math.abs(Q(b, s).dot(Q(b, s + l)));
       c += Math.abs(P(s).y - P(s + l).y) * 3 + Math.abs((P(s + 1).y - P(s).y) - (P(s + l + 1).y - P(s + l).y)) * 40;
+      // düzlük: kayıt alanı küçükse oyuncu sık döner; dönüş anları döngü olarak seçilmesin
+      const p0 = P(s), p1 = P(s + l), pm = P(s + (l >> 1)), d = p1.clone().sub(p0).setY(0), dl = d.length();
+      if (dl < 0.2) continue; // yerinde sayma / durma
+      const off = pm.clone().sub(p0).setY(0).cross(d).length() / dl; // yolun düz çizgiden sapması (m)
+      c += Math.abs(wrap(yawAt(s + l) - yawAt(s))) * 2 + off * 6;
+      // hedef hız aralığı (verildiyse)
+      if (sp.v) { const v = dl / (l / fps); if (v < sp.v[0] || v > sp.v[1]) continue; }
       if (c < best) { best = c; a = s; L = l; }
     }
+    if (best >= 1e9) throw new Error(`${sp.key}: uygun döngü bulunamadı (pencere/hız aralığını kontrol edin)`);
   }
   // ortalama gövde yönü (kaynağın ileri ekseniyle)
   const fw = new THREE.Vector3();
@@ -151,7 +161,8 @@ const outFps = cfg.fps || 60;
 const out = { units: 'm', fps: outFps, id: cfg.id, source: cfg.source, clips: {}, hierarchy: null };
 const cache = {};
 for (const sp of cfg.clips) {
-  const file = path.resolve(path.dirname(cfgFile), cfg.dir || '.', sp.file);
+  // ham kayıtlar depoya girmez: kaynak klasörü 2. argümanla verilebilir
+  const file = path.resolve(process.argv[3] || path.resolve(path.dirname(cfgFile), cfg.dir || '.'), sp.file);
   if (!fs.existsSync(file)) { console.error('EKSİK DOSYA:', file); process.exit(2); }
   const M = (cache[file] ||= await loadMotion(file, cfg));
   if (!out.hierarchy) out.hierarchy = M.hierarchy;

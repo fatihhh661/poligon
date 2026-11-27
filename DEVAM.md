@@ -133,7 +133,18 @@ Yalnızca karakterin görünümü değişti; arayüz, sahne, ışık, mekanik ay
   - GPU belleği.
   - KTX2'nin BC7'ye çevrildiği (konsolda uyarı olmamalı).
 
+## 8. oturum: animasyon altyapısı ve 100STYLE (27.11.2026, laptop)
+- **Neden robotik görünüyordu:** 3 farklı kişiden 6 tek döngülük CMU sivil klibi (30 fps); bacaklar IK, gövde %80 dik tutma, kollar IK, üstüne sinüs salınımları. Gerçek kayıt neredeyse görünmüyordu.
+- **Kütüphane altyapısı:** `scripts/import-anim.mjs` (BVH → kütüphane JSON; döngü arama, düzlük ve hız filtresi, yön hizalama), `app/assets/anim/library.json` (etkin kütüphane), `src/assets.js` `loadMotionLibrary()` (eksik klip/bozuk dosyada CMU `mocap.json`'a düşer). Kütüphane başına `torso` ağırlığı `uprightTorso`'yu ölçekler (CMU'da davranış aynı).
+- **Etkin kütüphane:** 100STYLE (CC BY 4.0, Ian Mason vd.; 60 fps Xsens, tek oyuncu). Bekleme/yürüyüş/geri yürüyüş Neutral, koşu Rushed (Neutral koşusu 1,9 m/sn tempo koşusuydu). Atıf Hakkında penceresindeki mevcut paragrafa eklendi; README'de yeniden üretme adımları var. Ham BVH'ler depoda yok.
+- **Karşılaştırma:** `localStorage.setItem('pp.animLib','cmu')` + yeniden yükleme eski kliplere döner; `removeItem` varsayılana.
+- **Ayak düzeltmeleri:** ayak yönü yan eksenden (150–170°/kare ayak takla atması giderildi), dururken bilek yere iner, iki ayağın aynı anda adım atması engellendi, parmak kalkışı yumuşatıldı.
+- **Tanılama (yalnızca geliştirici):** `__pp.play.rig.diag()` → kütüphane, klip ağırlıkları, faz, kadans, esnetme, ayak modları, geçersiz kemik, güncelleme ms.
+- **Ölçüm (aynı senaryo, aynı oturumda art arda, CDP ile):** koşuda kilitli ayak kayması 0,131 → 0,047 m/sn; yürüyüşte en büyük kemik sıçraması 22 → 15°/kare; geri yürüyüş 66 → 20; çapraz 90 → 9; rig güncellemesi ~1,0–1,5 ms (değişmedi).
+- **Kalan sorunlar:** koşudan duruşta sağ ayakta ~80°/kare sıçrama; çömelik yürüyüşte ayak kayması (0,6 m/sn ort.); 100STYLE koşuları küçük alanda kaydedildiği için en fazla ~2,6 m/sn, sprintte adım esnetme sınırına (1,45) dayanıyor. Gerçek tüfekli hareket (Mixamo rifle seti ya da MoCap Online Rifle) kullanıcı onayı/hesabı gerektirir; içe aktarıcı şimdilik yalnızca BVH okur (FBX yolu yok).
+
 ## Sıradaki iş
+0. Animasyon: koşu-duruş sıçraması, çömelik kayma, tüfekli kaynak (Mixamo FBX içe aktarma yolu) — 8. oturum notlarına bakın.
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
 3. Çevre için kalan iyileştirmeler (kullanıcı isterse):
