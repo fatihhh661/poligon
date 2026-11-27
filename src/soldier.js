@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 import { A } from './assets.js';
+import { characterMaterial } from './characterLook.js';
 
 // ----------------- yardımcılar -----------------
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -164,6 +165,9 @@ const MARK_COLORS = [
 const markMats = new Map();
 function markMaterial(src) {
   if (markMats.has(src.name)) return markMats.get(src.name);
+  // gerçekçi karakter malzemesi (characterLook.js); hazır değilse eski malzeme
+  const hd = characterMaterial(src);
+  if (hd) { markMats.set(src.name, hd); return hd; }
   let m = src;
   if (src.map) {
     // kumaş/teçhizat: metal değil (metalik kanal kumaşı karartıyordu)

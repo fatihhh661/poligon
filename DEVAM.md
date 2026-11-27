@@ -116,6 +116,23 @@ Yapılanlar (`soldier.js`):
 - Bacaklar: ayak merkezi kalçadan en az 11 cm yanda; havadaki ayak diğerinin yanından dışa kavisle geçer; dizler hafif dışa bakar.
 - Doğrulama Düşük kalitede yakın çekim karelerle yapıldı. **Laptopta canlı izlenmeli:** parmakların kavrayışı, sol elin el kundağındaki yeri, gövde dönüş açısı (`bl = -0.42`).
 
+## 7. oturum: karakter gerçekçilik güncellemesi (27.11.2026, bulut)
+Yalnızca karakterin görünümü değişti; arayüz, sahne, ışık, mekanik aynı. Geri dönüş: git etiketi `karakter-oncesi-yedek` (7a56e3a) ya da `localStorage.setItem('pp.karakterFX','0')` (eski malzemeler).
+- Yeni modül `src/characterLook.js`: KTX2 doku yükleme (60 sn zaman aşımı → eski görünüm), yüzey tablosu `SURFACES`, prosedürel mikro-yüzey dokuları, `onBeforeCompile` eklentileri. `assets.js` yalnızca yükleyiciyi çağırıyor; `soldier.js` `markMaterial` önce `characterMaterial` deniyor.
+- Dokular `app/assets/models/mark-hd/*.ktx2` (103 MB, UASTC+zstd → GPU'da BC7). Kaynak: `dist/mark/sf/full/textures` (orijinal Sketchfab 4K). 8 normal haritası 4K, renk ve ORM 2K. Kodlayıcı: npm `ktx2-encoder@0.5.4` (0.6 sürümü 12 MP sınırı yüzünden 4K yapamıyor); betik scratchpad'deydi, gerekirse yeniden yazılır.
+- Analiz bulguları:
+  - ORM'nin R kanalı gerçek AO (eski kod "boş" sanıp kapatmıştı).
+  - B (metal) kanalı ceplerdeki tokalar dışında hatalı olarak 255; yeni dokularda sıfırlandı.
+  - Eski kod bütün albedoları 1,75 ile çarpıyor, envMapIntensity 1,4 kullanıyordu.
+  - Model dosyasında tanjant yok (türev tabanlı çerçeve, normalScale.y = -1).
+- `app/index.html` CSP: KTX2 çözücüsü (Emscripten/embind) için script-src'ye `'unsafe-eval' 'wasm-unsafe-eval'` eklendi. Bu yoksa yükleme takılıyordu.
+- Ayar değerleri `SURFACES` içinde: albedo, sheen, mikro-normal, `uHemi` 0,5 (dolgu ışığı karakterde yarım), `uMicroShadow` 0,45, AO tabanı 0,22.
+- Laptopta doğrulanacaklar:
+  - Yüksek/Ultra'da görünüm.
+  - Açılış süresi.
+  - GPU belleği.
+  - KTX2'nin BC7'ye çevrildiği (konsolda uyarı olmamalı).
+
 ## Sıradaki iş
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
