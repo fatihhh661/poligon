@@ -109,6 +109,17 @@ function buildClip(M, sp, outFps) {
   for (const b of names) clip.q[M.nm(b)] = [];
   const blendTail = sp.idle ? Math.round((sp.blend ?? 0.8) * outFps) : 0;
   const hipQ = (i) => { let q = rotInv.clone().multiply(Q(hipName, i)); if (sp.idle) q = q.multiply(new THREE.Quaternion(0, q.y, 0, q.w).normalize().invert()); return q; };
+  // döngü kapatma: seçilen pencerenin sonu başına tam oturmaz (döngü hatası). Eskiden son kare zorla
+  // ilk kareye eşitleniyordu; bu, dikişte tek karede ~40° ayak sıçraması yapıyordu (Rushed koşusu).
+  // Fark klip boyunca doğrusal dağıtılır: her karede düzeltmenin u kadarı uygulanır, son kare başa oturur.
+  const loopFix = {};
+  if (!sp.idle) for (const b of names) {
+    const q0 = b === hipName ? hipQ(a) : Q(b, a), qe = b === hipName ? hipQ(a + L) : Q(b, a + L);
+    if (q0.dot(qe) < 0) qe.set(-qe.x, -qe.y, -qe.z, -qe.w);
+    loopFix[b] = q0.clone().multiply(qe.invert());
+  }
+  const dyLoop = sp.idle ? 0 : P(a + L).y - P(a).y;
+  const I = new THREE.Quaternion();
   for (let k = 0; k <= N; k++) {
     const u = k / N, f = a + u * L, fi = Math.min(a + L - 1, Math.floor(f)), fr = f - fi;
     const wTail = blendTail && k > N - blendTail ? (k - (N - blendTail)) / blendTail : 0;
@@ -117,11 +128,12 @@ function buildClip(M, sp, outFps) {
       let q = b === hipName ? hipQ(fi).slerp(hipQ(fi + 1), fr) : Q(b, fi).slerp(Q(b, fi + 1), fr);
       const q0 = b === hipName ? hipQ(a) : Q(b, a);
       if (wTail > 0) q.slerp(q0, sm);
+      if (loopFix[b]) q = I.clone().slerp(loopFix[b], u).multiply(q);
       if (k === N) q = q0;
       clip.q[M.nm(b)].push(...q.toArray().map((v) => +v.toFixed(5)));
     }
     let p = P(fi).lerp(P(fi + 1), fr).sub(P(a));
-    p.x -= D.x * u; p.z -= D.z * u;
+    p.x -= D.x * u; p.z -= D.z * u; p.y -= dyLoop * u;
     p.applyQuaternion(rotInv);
     if (wTail > 0 || k === N) p.lerp(new THREE.Vector3(), k === N ? 1 : sm);
     clip.hp.push(+p.x.toFixed(4), +(P(a).y + p.y).toFixed(4), +p.z.toFixed(4));

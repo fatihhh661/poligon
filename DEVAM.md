@@ -141,10 +141,17 @@ Yalnızca karakterin görünümü değişti; arayüz, sahne, ışık, mekanik ay
 - **Ayak düzeltmeleri:** ayak yönü yan eksenden (150–170°/kare ayak takla atması giderildi), dururken bilek yere iner, iki ayağın aynı anda adım atması engellendi, parmak kalkışı yumuşatıldı.
 - **Tanılama (yalnızca geliştirici):** `__pp.play.rig.diag()` → kütüphane, klip ağırlıkları, faz, kadans, esnetme, ayak modları, geçersiz kemik, güncelleme ms.
 - **Ölçüm (aynı senaryo, aynı oturumda art arda, CDP ile):** koşuda kilitli ayak kayması 0,131 → 0,047 m/sn; yürüyüşte en büyük kemik sıçraması 22 → 15°/kare; geri yürüyüş 66 → 20; çapraz 90 → 9; rig güncellemesi ~1,0–1,5 ms (değişmedi).
-- **Kalan sorunlar:** koşudan duruşta sağ ayakta ~80°/kare sıçrama; çömelik yürüyüşte ayak kayması (0,6 m/sn ort.); 100STYLE koşuları küçük alanda kaydedildiği için en fazla ~2,6 m/sn, sprintte adım esnetme sınırına (1,45) dayanıyor. Gerçek tüfekli hareket (Mixamo rifle seti ya da MoCap Online Rifle) kullanıcı onayı/hesabı gerektirir; içe aktarıcı şimdilik yalnızca BVH okur (FBX yolu yok).
+- **Ayak sorunları turu (aynı oturum):**
+  - Ölçüm betiği düzeltildi: önceki "koşu-duruş 80°" aslında sonraki 180° dönüşe, "duruş2 44 m/sn" çömelmeye geçişe aitti; bunlar artık ayrı bölüm.
+  - `stanceBlend()`: duruş değişiminde (ayakta/diz/alçak/yüzüstü) alt gövde pozu dondurulup yeni poza karışır; ayaklar sırayla adım atar (en çok yer değiştiren önce), bilek ve parmak ucu zemin altına inmez. Çömelik yürüyüşten diz çökme de bu yolla yapılır (`_kneelEv`).
+  - Diz/çömelik: ayak yönü eşik yerine ağırlıkla geçer; diz çökmüşken kilit ayağın gerçek yerinde (`_kneelFoot`); parmak ucu zemin kısıtı bileği kaldırarak yapılır (döndürme dikeye yakın ayakta ters çeviriyordu).
+  - İçe aktarıcı döngü kapatma: son kareyi başa zorlamak yerine fark klip boyunca dağıtılır (Rushed koşusunda dikişte 40° sıçrama vardı).
+  - Planlayıcı: iniş yönü ve ayak ucu açısı yumuşatıldı (ileri/geri yarım küre değişiminde rho ~180° atlıyordu); havadaki ayağın dönüşü adım boyunca sürekli, adım başına en fazla ~90°.
+  - Sonuç (iki tekrarın en kötüsü, °/kare): yürüyüş 22→14, koşu 44→15, koşu-duruş 41→18, sprintten 180° dönüş 110→36 (baş; ayaklar <25), çapraz-duruş 52→13, çömelme geçişi 162→10, çömelik yürüyüş 86→13 (kayma 0,57→0,18 m/sn). Rig güncellemesi ~1,2–1,6 ms.
+- **Kalan:** 100STYLE koşuları en fazla ~2,6 m/sn, sprintte adım esnetme sınırına (1,45) dayanıyor. Gerçek tüfekli hareket (Mixamo rifle seti ya da MoCap Online Rifle) kullanıcı onayı/hesabı gerektirir; içe aktarıcı şimdilik yalnızca BVH okur (FBX yolu yok). Geçişlerdeki "kayma" ölçüsü adım atan ayakları da saydığından o bölümlerde anlamlı değil.
 
 ## Sıradaki iş
-0. Animasyon: koşu-duruş sıçraması, çömelik kayma, tüfekli kaynak (Mixamo FBX içe aktarma yolu) — 8. oturum notlarına bakın.
+0. Animasyon: tüfekli kaynak (Mixamo FBX içe aktarma yolu), daha hızlı sprint kaydı — 8. oturum notlarına bakın.
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
 3. Çevre için kalan iyileştirmeler (kullanıcı isterse):

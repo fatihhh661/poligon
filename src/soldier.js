@@ -601,16 +601,24 @@ export class Rig {
     root.updateMatrixWorld(true);
     const up = V(0, 1, 0);
     const rf = V(0, 0, -1).transformDirection(root.matrixWorld); rf.y = 0; rf.normalize();
-    const t0 = rf.clone().multiplyScalar(L.hemi > 0 ? 1 : -1);
-    const tr = t0.clone().applyAxisAngle(up, (L.rho * Math.PI) / 180);
-    const hip = wpos(B('Hips')); hip.y = 0;
-    const gy = (s.groundY ?? 0.015) + this.ankleH;
-    const out = {};
     const yawOf = (v) => Math.atan2(v.x, v.z);
     const wrapA = (x) => Math.atan2(Math.sin(x), Math.cos(x));
     // grup bir karede çok yer değiştirdiyse (ışınlama, tekrar izlemede atlama, duruş değişimi) sıfırla
     const gp = wpos(g);
     const reset = !dt || !this._lastGP || gp.distanceTo(this._lastGP) > 0.6 || this._feetStance !== s.stance;
+    const t0 = rf.clone().multiplyScalar(L.hemi > 0 ? 1 : -1);
+    const tr = t0.clone().applyAxisAngle(up, (L.rho * Math.PI) / 180);
+    // İleri/geri yarım küre değişince (ör. koşudan yavaşlarken 180° dönüş) rho tek karede ~180° atlıyor,
+    // havadaki ayağın iniş noktası öne/arkaya, ayak ucu yönü ~100° sıçrıyordu (ölçüm: 75–110°/kare).
+    // İniş yönü dünya uzayında, ayak ucu açısı da kendi başına hız sınırlı izlenir.
+    const kS = reset ? 1 : 1 - Math.exp(-dt * 12);
+    this._trYaw = this._trYaw == null ? yawOf(tr) : this._trYaw + wrapA(yawOf(tr) - this._trYaw) * kS;
+    const trS = V(Math.sin(this._trYaw), 0, Math.cos(this._trYaw));
+    const offT = ((L.rho * Math.PI) / 180) * 0.6;
+    this._yOff = this._yOff == null ? offT : this._yOff + (offT - this._yOff) * kS;
+    const hip = wpos(B('Hips')); hip.y = 0;
+    const gy = (s.groundY ?? 0.015) + this.ankleH;
+    const out = {};
     if (!reset) { const v = gp.clone().sub(this._lastGP).divideScalar(dt); v.y = 0; this._gv.lerp(v, 1 - Math.exp(-dt * 12)); }
     else this._gv.set(0, 0, 0);
     this._lastGP = gp; this._feetStance = s.stance;
@@ -649,14 +657,17 @@ export class Rig {
       const sd = side === 'Left' ? -1 : 1, latR = wp.clone().sub(hip).dot(rr);
       if (latR * sd < 0.11) wp.addScaledVector(rr, sd * 0.11 - latR);
       wp.y = Math.max(fp.y, gy);
-      const yawW = fyaw + ((L.rho * Math.PI) / 180) * 0.6; // ayak ucu adım yönüne kısmen döner
+      const yawW = fyaw + this._yOff; // ayak ucu adım yönüne kısmen döner (yumuşatılmış)
       const f = F[side];
       // kilitli ayakta parmak tabanı yerde sabit; bilek, topuk kalkışıyla onun etrafında döner
       // dururken kilitli ayak yere oturur: bekleme kaydındaki ayak yüksekliği bu modelde yerin ~6 cm
       // üstünde kalıyordu (ayaklar havada); kalça gerekirse legsTo içinde iner
       const lockedAnkle = () => { const a = f.lock.clone().add(rv(f.lockYaw)); a.y = THREE.MathUtils.lerp(wp.y, gy, smooth01(L.w.Idle || 0)); return a; };
       const plantAt = (ankle, fy) => { f.mode = 'plant'; f.lock = toeOf(ankle, fy); f.lock.y = 0; f.lockYaw = fy; };
-      if (reset || f.mode === 'init' || kneel) plantAt(wp, yawW);
+      // diz çökmüşken kilit, ayağın diz pozundaki gerçek yerinde tutulur; çömelerek yürümeye geçerken
+      // basan ayak kayıttaki yere doğru kaymaz, diğer ayak buradan adım atar
+      if (reset || f.mode === 'init') plantAt(wp, yawW);
+      else if (kneel) plantAt(this._kneelFoot?.[side] || wp, yawW);
       else if (moving) {
         const c = this.contactAt(side) > 0.5;
         if (f.mode === 'step') { f.mode = 'swing'; f.from = f.cur.clone(); f.fromYaw = f.curYaw; f.ps = L.phase; }
@@ -679,6 +690,18 @@ export class Rig {
           }
         }
       }
+      // havadaki ayağın dönüş miktarı: hedef ~180° farklıyken "en kısa yön" kareden kareye ters dönüp
+      // ayağı tek karede çeviriyordu (ölçüm: 113–142°/kare). Adım boyunca yön sürekli tutulur ve bir
+      // adımdaki dönüş ~90° ile sınırlanır; kalanı sonraki adım tamamlar (insan da böyle döner).
+      if (f.mode === 'plant') f.turn = null;
+      const turnD = () => {
+        if (f.turnFrom !== f.fromYaw) { f.turn = null; f.turnFrom = f.fromYaw; } // yeni adım: süreklilik sıfırdan
+        let d = wrapA(yawW - f.fromYaw);
+        if (f.turn != null && Math.abs(d - f.turn) > Math.PI) d += d < f.turn ? 2 * Math.PI : -2 * Math.PI;
+        d = Math.max(-1.6, Math.min(1.6, d));
+        f.turn = d;
+        return d;
+      };
       // hedefi uygula
       let pos, fy;
       if (f.mode === 'plant') { pos = lockedAnkle(); fy = f.lockYaw; }
@@ -691,19 +714,19 @@ export class Rig {
         // iniş: basış süresince alınacak yolun ~%42'si kalçanın önünde (insan yürüyüşü/koşusu oranı)
         const S = (s.locoSpeed || 0) / Math.max(0.2, L.cad || 1);
         const land = hip.clone().addScaledVector(this._gv, rem / Math.max(0.2, L.cad || 1))
-          .addScaledVector(rr, sd * Math.max(0.115, Math.abs(lo.lat))).addScaledVector(tr, 0.42 * lo.fc * S);
+          .addScaledVector(rr, sd * Math.max(0.115, Math.abs(lo.lat))).addScaledVector(trS, 0.42 * lo.fc * S);
         const kk = u * u * (3 - 2 * u);
         pos = f.from.clone().lerp(land, kk); pos.y = wp.y;
         // diğer ayağın yanından geçerken hafif dışa kavis
         pos.addScaledVector(rr, sd * 0.035 * Math.sin(Math.PI * u));
-        fy = f.fromYaw + wrapA(yawW - f.fromYaw) * kk;
+        fy = f.fromYaw + turnD() * kk;
       } else { // düzeltme adımı
         f.u = Math.min(1, f.u + dt / (f.dur || 0.3));
         const kk = smooth01(f.u);
         pos = f.from.clone().lerp(wp, kk);
         pos.y = Math.max(gy, wp.y) + Math.sin(Math.PI * f.u) * 0.075;
-        fy = f.fromYaw + wrapA(yawW - f.fromYaw) * kk;
-        if (f.u >= 1) plantAt(wp, yawW);
+        fy = f.fromYaw + turnD() * kk;
+        if (f.u >= 1) plantAt(wp, fy); // sınırlanmış dönüşle basar; kalan fark gerekirse yeni adım başlatır
       }
       f.cur = pos.clone(); f.curYaw = fy; f.wp = wp;
       // ayak yönü: kayıttaki topuk-parmak yuvarlanması korunur, yalnızca dikey eksende düzeltilir
@@ -788,6 +811,79 @@ export class Rig {
     };
   }
 
+  /**
+   * Duruş geçişi (ayakta / diz / alçak / yüzüstü). Eskiden alt gövde pozu tek karede yenisine atlıyordu
+   * (ölçüm: ayakta→diz geçişinde ayak 162°/kare, 0,7 m sıçrama). Değişim anındaki gösterilen poz
+   * dondurulur ve yeni duruşun pozuna karıştırılır; süre geçişin büyüklüğüne göre değişir. Kollar ve
+   * tüfek bu katmandan sonra hesaplandığı için eller silahta kalır. Geçiş yarıda kesilirse o anki
+   * karışık pozdan devam eder (sıçrama olmaz).
+   */
+  stanceBlend(dt) {
+    const s = this.state, root = this.root, B = this.B;
+    if (!this._sbBones) {
+      const names = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head'];
+      for (const sd of ['Left', 'Right']) names.push(sd + 'UpLeg', sd + 'Leg', sd + 'Foot', sd + 'ToeBase');
+      this._sbBones = names.map((n) => B(n)).filter(Boolean);
+      const mk = () => ({ rp: V(), rq: new THREE.Quaternion(), q: this._sbBones.map(() => new THREE.Quaternion()), fp: { Left: V(), Right: V() } });
+      this._sbPose = mk(); this._sbFrom = mk(); this._sbT = -1; this._sbHave = false;
+    }
+    const bones = this._sbBones, P = this._sbPose, F = this._sbFrom;
+    const kneelEv = this._kneelEv; this._kneelEv = false; // çömelik yürüyüşten diz çökme
+    if (this._sbHave && ((this._sbStance !== undefined && this._sbStance !== s.stance) || kneelEv)) {
+      const pair = [this._sbStance, s.stance];
+      this._sbDur = kneelEv ? 0.4 : pair.includes('yuzustu') ? 0.6 : pair.includes('alcak') && pair.includes('ayakta') ? 0.45 : 0.36;
+      F.rp.copy(P.rp); F.rq.copy(P.rq); bones.forEach((b, i) => F.q[i].copy(P.q[i])); F.fp.Left.copy(P.fp.Left); F.fp.Right.copy(P.fp.Right);
+      this._sbFromStance = this._sbStance;
+      this._sbT = 0;
+    }
+    this._sbStance = s.stance;
+    if (this._sbT >= 0 && dt > 0) {
+      this._sbT += dt;
+      const u = Math.min(1, this._sbT / this._sbDur);
+      const w = 1 - u * u * (3 - 2 * u); // eski pozun kalan ağırlığı
+      if (u >= 1) this._sbT = -1;
+      else {
+        // Ayaklar adım atarak yer değiştirir: yeni duruşta en çok yer değiştiren ayak önce kalkıp yerine
+        // geçer, diğeri yerde bekler; ilki inerken ikincisi (gerekiyorsa) adım atar. Eskiden iki ayak
+        // birlikte yerde sürünüyordu (ölçüm: ~0,4 m kayma), aynı anda kaldırmak da zıplama gibiydi.
+        const g = this.group, np = {}, dd = {};
+        const ground = this._sbFromStance !== 'yuzustu' && s.stance !== 'yuzustu';
+        g.updateMatrixWorld(true);
+        for (const sd of ['Left', 'Right']) { np[sd] = g.worldToLocal(wpos(B(sd + 'Foot'))); dd[sd] = Math.hypot(np[sd].x - F.fp[sd].x, np[sd].z - F.fp[sd].z); }
+        root.position.lerp(F.rp, w);
+        root.quaternion.slerp(F.rq, w);
+        bones.forEach((b, i) => b.quaternion.slerp(F.q[i], w));
+        g.updateMatrixWorld(true);
+        if (ground) {
+          const mv = dd.Left > dd.Right ? 'Left' : 'Right', st = mv === 'Left' ? 'Right' : 'Left';
+          const two = dd[mv] > 0.12 && dd[st] > 0.12;
+          // her ayağın zaman penceresi [a, b] (geçişin oranı olarak)
+          const win = { [mv]: [0, two ? 0.62 : 1], [st]: two ? [0.42, 1] : [0, 1] };
+          const gy = (s.groundY ?? 0.015) + (this.ankleH || 0.08), toeMin = (s.groundY ?? 0.015) + 0.02;
+          const fwdG = V(0, 0, -1).transformDirection(g.matrixWorld);
+          for (const sd of ['Left', 'Right']) {
+            const [a, b] = win[sd], uu = Math.min(1, Math.max(0, (u - a) / (b - a)));
+            const ft = B(sd + 'Foot'), tb = B(sd + 'ToeBase');
+            const fq = ft.getWorldQuaternion(new THREE.Quaternion());
+            const tgt = g.localToWorld(F.fp[sd].clone().lerp(np[sd], uu * uu * (3 - 2 * uu)));
+            // kalkış: yer değiştirmeyle orantılı kısa adım yayı
+            if (dd[sd] > 0.12) tgt.y += Math.sin(Math.PI * uu) * Math.min(sd === mv ? 0.09 : 0.07, 0.4 * dd[sd]);
+            // bilek de parmak ucu da zeminin üstünde (eklem açıları ile kalça farklı hızda karışınca ara pozda gömülüyordu)
+            const toeDy = tb ? wpos(tb).y - wpos(ft).y : 0;
+            tgt.y = Math.max(tgt.y, gy, toeMin - toeDy);
+            twoBoneIK(B(sd + 'UpLeg'), B(sd + 'Leg'), ft, tgt, wpos(B(sd + 'Leg')).addScaledVector(fwdG, 0.3));
+            ft.quaternion.copy(ft.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(fq));
+            ft.updateMatrixWorld(true);
+          }
+        }
+      }
+    }
+    P.rp.copy(root.position); P.rq.copy(root.quaternion); bones.forEach((b, i) => P.q[i].copy(b.quaternion));
+    this.group.updateMatrixWorld(true);
+    for (const sd of ['Left', 'Right']) P.fp[sd].copy(this.group.worldToLocal(wpos(B(sd + 'Foot'))));
+    this._sbHave = true;
+  }
+
   update(dt) {
     const t0 = performance.now();
     this._update(dt);
@@ -866,6 +962,11 @@ export class Rig {
       // diz çökme <-> çömelerek yürüme: hareket edince kalça biraz kalkar, ayaklar yürüyüş kaydının
       // adımlarını izler (dizler bükük), durunca sağ diz yere iner
       const moving = this.mocap && (s.locoSpeed || 0) > 0.15;
+      // çömelik yürüyüşten diz çökmeye: eskiden cw azalırken iki ayak diz pozuna doğru yerde kayıyordu
+      // (ölçüm: ~0,1 sn'de 8–10 m/sn). Artık diz pozu hemen hedeflenir, geçişi stanceBlend ayakları
+      // sırayla adım attırarak yapar.
+      if (this._cwMoving && !moving && (this._cw || 0) > 0.6) { this._cw = 0; this._kneelEv = true; }
+      this._cwMoving = moving;
       this._cw = dt > 0 ? THREE.MathUtils.lerp(this._cw || 0, moving ? 1 : 0, 1 - Math.exp(-dt * 7)) : (moving ? 1 : 0);
       const cw = this._cw;
       const FT = legsMode ? this.planFeet(dt) : null;
@@ -874,9 +975,31 @@ export class Rig {
       g.updateMatrixWorld(true);
       twoBoneIK(B('LeftUpLeg'), B('LeftLeg'), B('LeftFoot'), L(-0.12, 0.1, -0.42).lerp(fl0, cw), L(-0.12, 0.6, -1.5).lerp(L(-0.18, 0.4, -1.3), cw));
       twoBoneIK(B('RightUpLeg'), B('RightLeg'), B('RightFoot'), L(0.14, 0.12, 0.42).lerp(fr0, cw), L(0.14, -1, -0.4).lerp(L(0.18, 0.4, -1.3), cw));
-      if (FT && cw > 0.5) for (const side of ['Left', 'Right']) { const f = B(side + 'Foot'), pq = f.parent.getWorldQuaternion(new THREE.Quaternion()); f.quaternion.copy(pq.invert().multiply(FT[side].q)); f.updateMatrixWorld(true); }
+      // ayak yönü yürüyüş hedefine ağırlıkla geçer (eskiden cw 0,5'i geçince tek karede ~87° dönüyordu)
+      const fwq = smooth01((cw - 0.25) / 0.5);
+      if (FT && fwq > 0) for (const side of ['Left', 'Right']) { const f = B(side + 'Foot'), pq = f.parent.getWorldQuaternion(new THREE.Quaternion()); f.quaternion.slerp(pq.invert().multiply(FT[side].q), fwq); f.updateMatrixWorld(true); }
       if (cw < 0.99) rotWorld(B('RightFoot'), right, -0.9 * (1 - cw));
       rotWorld(spine, right, 0.12);
+      // ayak ucu zemine girmesin: diz çöken arka ayak düzleşirken (bilek etrafında dönerken) parmak
+      // ucu bir an ~7 cm zeminin altına iniyordu. Ayak döndürülmez (dikeye yakın ayakta dönüş yönü
+      // belirsizleşip ayağı ters çeviriyordu); bilek, uç zemine değecek kadar yukarı alınır.
+      g.updateMatrixWorld(true);
+      const toeMin = (s.groundY ?? 0.015) + 0.02;
+      const fwdG = V(0, 0, -1).transformDirection(g.matrixWorld);
+      for (const side of ['Left', 'Right']) {
+        const ft = B(side + 'Foot'), tb = B(side + 'ToeBase');
+        if (!tb) continue;
+        const ty = wpos(tb).y;
+        if (ty >= toeMin) continue;
+        const fq = ft.getWorldQuaternion(new THREE.Quaternion());
+        const tgt = wpos(ft); tgt.y += toeMin - ty;
+        twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), ft, tgt, wpos(B(side + 'Leg')).addScaledVector(fwdG, 0.3));
+        ft.quaternion.copy(ft.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(fq));
+        ft.updateMatrixWorld(true);
+      }
+      // diz pozundaki gerçek bilek yerleri: yürümeye başlarken basan ayak buraya kilitlenir (kaymaz)
+      g.updateMatrixWorld(true);
+      this._kneelFoot = { Left: wpos(B('LeftFoot')), Right: wpos(B('RightFoot')) };
     } else if (this.isMark) {
       // taktik yürüyüş: hareket ederken dizler bükülür (ayaklar yerde kilitli), gövde hafif öne
       const mv = Math.min(1, s.move || 0);
@@ -906,6 +1029,7 @@ export class Rig {
         if (fp.y < gy) { fp.y = gy; twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), f, fp, L(sx * 0.12, 0.5, -1.3)); }
       }
     }
+    this.stanceBlend(dt);
     // silah duruşu katmanı (ayakta ve çömelerek yürürken)
     if (this.mocap && (s.stance === 'ayakta' || s.stance === 'diz')) { g.updateMatrixWorld(true); this.uprightTorso(dt); }
     // üst gövde burulması: bakış yönü ile bacak yönü arasındaki fark omurgaya dağıtılır (omuz önce döner)
