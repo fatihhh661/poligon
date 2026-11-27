@@ -452,7 +452,8 @@ export class Rig {
     const cRun = 1.05 + 0.11 * sp;
     let c = L.hemi > 0 ? cWalk + (cRun - cWalk) * runK : 0.75 + 0.3 * sp;
     let w = sp / Math.max(1e-3, c * S0);
-    const wMax = 1.45;
+    // adım esnetme sınırı kütüphaneye göre: hızlı kadanslı kaynaklarda (Mixamo koşusu ~240 adım/dk) fazla esnetme ayağı kaydırıyor
+    const wMax = A.animInfo?.maxWarp ?? 1.45;
     if (w > wMax) { w = wMax; c = sp / (w * S0); }
     L.warp = w;
     L.cad = c;
@@ -747,9 +748,13 @@ export class Rig {
     const reach = this.legLen * 0.985, gy0 = (this.state.groundY ?? 0.015) + this.ankleH;
     const liftFor = (u, t, R) => { const hd = Math.hypot(u.x - t.x, u.z - t.z); return hd >= R ? -0.12 : t.y + Math.sqrt(R * R - hd * hd) - u.y; };
     let lift = 0.06;
+    // dururken topuk kaldırarak uzanmak yok: kalça iner. Geniş duruşlu bekleme kayıtlarında (Mixamo) kısa
+    // bacaklı askerde topuk ~42° kalkıp nefes salınımıyla titriyordu. Yürürken itiş için topuk kalkabilir.
+    const toeOk = (this.loco?.w?.Idle || 0) < 0.5;
     for (const side of ['Left', 'Right']) {
       const u = wpos(B(side + 'UpLeg')), Tt = T[side];
-      if (Tt.toe) lift = Math.min(lift, Math.max(liftFor(u, Tt.p, this.legLen * 0.99), liftFor(u, Tt.toe, this.legLen * 0.99 + 0.1)));
+      if (Tt.toe && toeOk) lift = Math.min(lift, Math.max(liftFor(u, Tt.p, this.legLen * 0.99), liftFor(u, Tt.toe, this.legLen * 0.99 + 0.1)));
+      else if (Tt.toe) lift = Math.min(lift, liftFor(u, Tt.p, this.legLen * 0.97));
       else if (Tt.p.y < gy0 + 0.04) lift = Math.min(lift, liftFor(u, Tt.p, this.legLen * 0.99));
     }
     const want = Math.max(-0.1, lift);
@@ -768,7 +773,15 @@ export class Rig {
       // topuk kalkışı: basan ayak geride kalıp bacak boyu yetmeyince ayak parmak tabanı
       // etrafında döner, topuk kalkar (gerçek yürüyüşteki itiş anı)
       let p = T[side].p, qf = T[side].q;
-      const toeP = T[side].toe, reach = this.legLen * 0.985, ulp = wpos(ul);
+      // dönme noktası: parmak kemiğinin hedef pozdaki GERÇEK yeri. Eskiden kilit noktasının sabit 3,5 cm
+      // üstü alınıyordu; topuk çok kalkınca (Mixamo koşusu ~30°) bu fark parmak ucunu yerde kaydırıyordu.
+      let toeP = null;
+      if (T[side].toe) {
+        const tb = B(side + 'ToeBase');
+        const fw = foot.getWorldQuaternion(new THREE.Quaternion()).invert();
+        toeP = tb ? T[side].p.clone().add(wpos(tb).sub(wpos(foot)).applyQuaternion(fw).applyQuaternion(qf)) : T[side].toe;
+      }
+      const reach = this.legLen * 0.985, ulp = wpos(ul);
       const ax = up.clone().cross(ff).normalize();
       // gereken topuk kalkış açısı (bacak boyu yetmiyorsa); en fazla ~57°
       let need = 0;
@@ -780,8 +793,8 @@ export class Rig {
       }
       // açı zamana yayılır: eskiden her karede sıfırdan hesaplandığı için koşul açılıp kapanınca ayak
       // tek karede 0°↔72° atlıyordu. Kalkışta hızlı (insan itişi), bırakışta daha yavaş söner.
-      const RL = (this._roll ||= { Left: 0, Right: 0 });
-      RL[side] += (need - RL[side]) * (dt > 0 ? 1 - Math.exp(-dt * (need > RL[side] ? 30 : 12)) : 1);
+      const RL = (this._roll ||= { Left: 0, Right: 0 }); // kalkış hızı 70: hızlı itişli koşularda (Mixamo) 30 geride kalıyor, bacak yetmeyip ayak 5–7 cm sürükleniyordu
+      RL[side] += (need - RL[side]) * (dt > 0 ? 1 - Math.exp(-dt * (need > RL[side] ? 70 : 12)) : 1);
       const ra = RL[side];
       if (ra > 1e-3) {
         if (toeP) p = toeP.clone().add(p.clone().sub(toeP).applyAxisAngle(ax, ra)); // parmak tabanı etrafında

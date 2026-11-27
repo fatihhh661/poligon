@@ -4,3 +4,6 @@ app/bundle.js
 app/bundle.js.map
 app/fonts/
 ekran-goruntuleri/
+
+# Mixamo kaynaklı hareket verisi herkese açık depoya girmez (Mixamo koşulları); yalnızca yerel ve pakette
+app/assets/anim/lib/mixamo-*.json

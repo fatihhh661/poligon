@@ -1,0 +1,24 @@
+{
+  "id": "mixamo-rifle",
+  "activate": true,
+  "profile": "mixamo",
+  "srcFps": 60,
+  "fps": 60,
+  "torso": 0.3,
+  "maxWarp": 1.1,
+  "source": {
+    "name": "Mixamo — Rifle 8-Way Locomotion Pack",
+    "author": "Adobe Mixamo",
+    "license": "Mixamo kullanım koşulları (projelerde ücretsiz, ticari dahil; ham dosyalar ayrıca dağıtılamaz)",
+    "url": "https://www.mixamo.com",
+    "attribution": "Hareketler: Adobe Mixamo",
+    "capture": "Mixamo, Y Bot iskeletine uyarlanmış, 60 fps, FBX Binary, karaktersiz",
+    "note": "Ham FBX dosyaları depoya girmez (Mixamo koşulları). Mixamo'da Y Bot seçili iken 'Rifle 8-Way Locomotion Pack' -> Download: FBX Binary, No Character, 60 fps, keyframe reduction none. Zip'i bir klasöre açıp bu tanımla çalıştırın."
+  },
+  "clips": [
+    { "key": "Idle", "file": "idle.fbx", "t0": 0, "t1": 2.1, "idle": true, "blend": 0.3 },
+    { "key": "Walk", "file": "walk forward.fbx", "t0": 0, "t1": 1.0, "L": [0.98, 1.0], "ang": 0 },
+    { "key": "Run", "file": "run forward.fbx", "t0": 0, "t1": 0.5, "L": [0.48, 0.5], "ang": 0 },
+    { "key": "WalkBack", "file": "walk backward.fbx", "t0": 0, "t1": 1.0, "L": [0.98, 1.0], "ang": 180 }
+  ]
+}

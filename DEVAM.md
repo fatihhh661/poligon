@@ -150,8 +150,18 @@ Yalnızca karakterin görünümü değişti; arayüz, sahne, ışık, mekanik ay
   - Sonuç (iki tekrarın en kötüsü, °/kare): yürüyüş 22→14, koşu 44→15, koşu-duruş 41→18, sprintten 180° dönüş 110→36 (baş; ayaklar <25), çapraz-duruş 52→13, çömelme geçişi 162→10, çömelik yürüyüş 86→13 (kayma 0,57→0,18 m/sn). Rig güncellemesi ~1,2–1,6 ms.
 - **Kalan:** 100STYLE koşuları en fazla ~2,6 m/sn, sprintte adım esnetme sınırına (1,45) dayanıyor. Gerçek tüfekli hareket (Mixamo rifle seti ya da MoCap Online Rifle) kullanıcı onayı/hesabı gerektirir; içe aktarıcı şimdilik yalnızca BVH okur (FBX yolu yok). Geçişlerdeki "kayma" ölçüsü adım atan ayakları da saydığından o bölümlerde anlamlı değil.
 
+## 9. oturum: Mixamo tüfekli hareketler (27.11.2026, laptop)
+- **Uyumluluk modu sorunu:** program "açıldı" bildirimini açılış animasyonundan sonra gönderiyordu; pencere arka planda kalınca zamanlayıcılar kısılıyor, bildirim gitmiyor, sonraki açılış kalıcı yazılım çizimine düşüyordu. Bildirim "%100 Hazır" anına alındı (559bf0b). Takılırsa: `%APPDATA%\Poligon Pro\baslatma.json` → `{"pending":false,"safe":false}` ya da Ayarlar → Donanım hızlandırma → Açık.
+- **Kaynak:** Mixamo "Rifle 8-Way Locomotion Pack" (49 FBX; Y Bot, No Character, 60 fps). Kullanıcının Adobe hesabıyla indirildi, satın alma yok. Kullanılan: idle, walk forward, run forward, walk backward. Paketteki çömelik yürüyüş, 8 yön, sprint, dönüşler henüz kullanılmıyor.
+- **Lisans kararı (kullanıcı onayı):** dönüştürülmüş Mixamo verisi herkese açık depoya GİRMEZ (`.gitignore`: `app/assets/anim/lib/mixamo-*.json`); yalnızca yerelde ve pakette. İş bilgisayarında pull edilince program 100STYLE ile çalışır; Mixamo için README'deki adımlarla zip'ten yeniden üretilir.
+- **İçe aktarıcı FBX yolu:** sahne kurulur, her karede dünya yönleri okunur ve BVH biçimine (dinlenme = sıfır dönüş) çevrilir; son karede başa sarma engellendi.
+- **Yükleyici:** seçilen → etkin → kayıttaki diğer kütüphaneler → CMU sırasıyla dener (dosyası olmayan atlanır).
+- **Ayak düzeltmeleri (tüm kütüphaneler):** topuk kalkışında dönme noktası parmak kemiğinin gerçek yeri (koşuda kayma 0,165 → 0,002 m/sn; 100STYLE'da da çaprazda 0,068 → 0); dururken topuk kaldırmak yerine kalça iner (Mixamo geniş bekleme duruşunda topuk 42° kalkıp titriyordu); topuk kalkış hızı 30 → 70; kütüphaneye özel adım esnetme sınırı (`maxWarp`, Mixamo 1,1).
+- **Ölçüm (Mixamo, kayma m/sn / en büyük sıçrama °/kare):** bekleme 0/8, yürüyüş 0/20, koşu 0,005/20, koşu-duruş 0,003/17, geri 0/21, çapraz 0/24, çömelik yürüyüş 0,23/15. Rig güncellemesi eski ve yeni kodda aynı (izole ölçüm 1,09–1,17 ms).
+- **Kalan:** çömelik yürüyüş hâlâ normal yürüyüş klibinden (paketteki "walk crouching" henüz bağlanmadı); hareket halindeyken çömelmede kısa sıçrama (~44°/kare); 8 yön ve sprint klipleri kullanılmıyor.
+
 ## Sıradaki iş
-0. Animasyon: tüfekli kaynak (Mixamo FBX içe aktarma yolu), daha hızlı sprint kaydı — 8. oturum notlarına bakın.
+0. Animasyon: Mixamo paketindeki çömelik yürüyüş, 8 yön ve sprint kliplerini motora bağla — 9. oturum notlarına bakın.
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.
 2. Oynama Modu'nda ara sıra ~35 ms'lik tekil kare takılmaları var (ortalama 72 FPS). Muhtemelen çöp toplama veya gölge haritası; video kaydında fark edilirse incelenmeli.
 3. Çevre için kalan iyileştirmeler (kullanıcı isterse):

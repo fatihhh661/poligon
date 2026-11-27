@@ -52,9 +52,16 @@ Asker hareketleri CMU Hareket Yakalama Veritabanı'ndan (ticari kullanım dahil 
 
 ### Hareket kütüphanesi (100STYLE)
 
-Varsayılan hareket kütüphanesi `app/assets/anim/lib/100style-neutral.json` dosyasıdır (`app/assets/anim/library.json` içindeki `active`). Kaynak: **The 100STYLE Dataset – Ian Mason, Sebastian Starke, Taku Komura** (CC BY 4.0, https://zenodo.org/records/8127870; Mason vd., "Real-Time Style Modelling of Human Locomotion via Feature-Wise Transformations and Local Motion Phases", ACM CGIT 2022, doi:10.1145/3522618). Bekleme, yürüyüş ve geri yürüyüş Neutral stilinden, koşu aynı oyuncunun Rushed stilinden alınır.
+Depodaki hareket kütüphanesi `app/assets/anim/lib/100style-neutral.json` dosyasıdır; yerelde Mixamo kütüphanesi varsa o kullanılır (aşağıya bakın) (`app/assets/anim/library.json` içindeki `active`). Kaynak: **The 100STYLE Dataset – Ian Mason, Sebastian Starke, Taku Komura** (CC BY 4.0, https://zenodo.org/records/8127870; Mason vd., "Real-Time Style Modelling of Human Locomotion via Feature-Wise Transformations and Local Motion Phases", ACM CGIT 2022, doi:10.1145/3522618). Bekleme, yürüyüş ve geri yürüyüş Neutral stilinden, koşu aynı oyuncunun Rushed stilinden alınır.
 
 Yeniden üretmek için 100STYLE.zip içinden `100STYLE/Neutral/*.bvh` ve `100STYLE/Rushed/Rushed_FR.bvh` dosyalarını tek klasöre koyup:
 `node scripts/import-anim.mjs scripts/anim-sources/100style-neutral.json <klasör>`
 
 Eski CMU kliplerine dönmek için geliştirici konsolunda `localStorage.setItem('pp.animLib','cmu')` ve yeniden yükleme; varsayılana dönmek için `localStorage.removeItem('pp.animLib')`. Kütüphane yüklenemezse program otomatik olarak `mocap.json` (CMU) dosyasına düşer.
+
+### Tüfekli hareketler (Mixamo)
+
+Paketlenen programda varsayılan kütüphane `mixamo-rifle`dır (Adobe Mixamo, "Rifle 8-Way Locomotion Pack": tüfekli bekleme, taktik yürüyüş, koşu, geri yürüyüş). Mixamo koşulları animasyonların tek başına dağıtılmasını yasakladığı için dönüştürülmüş dosya (`app/assets/anim/lib/mixamo-*.json`) **depoya girmez**; yalnızca yerelde ve exe paketinin içinde bulunur. Dosya yoksa program sırayla kayıttaki diğer kütüphanelere (100STYLE), en son CMU'ya düşer.
+
+Yeniden üretmek için: Mixamo'da (Adobe hesabıyla) karakter olarak **Y Bot** seçin → "Rifle 8-Way Locomotion Pack" → Download: **FBX Binary, No Character, 60 fps, Keyframe Reduction: none**. Zip'i bir klasöre açıp:
+`node scripts/import-anim.mjs scripts/anim-sources/mixamo-rifle.json <klasör>`

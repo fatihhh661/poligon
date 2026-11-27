@@ -80,20 +80,23 @@ async function loadMotionLibrary() {
   let want = null;
   try { want = localStorage.getItem('pp.animLib'); } catch (e) { /* */ }
   if (want !== 'cmu') {
-    try {
-      const reg = await (await fetch('assets/anim/library.json')).json();
-      const id = want && reg.libraries?.[want] ? want : reg.active;
-      const L = id && reg.libraries?.[id];
-      if (L) {
-        const M = await (await fetch(L.file)).json();
+    let reg = null;
+    try { reg = await (await fetch('assets/anim/library.json')).json(); } catch (e) { info.errors.push('library.json yüklenemedi: ' + (e?.message || e)); }
+    // sıra: seçilen, etkin, sonra kayıttaki diğerleri. Bir kütüphanenin dosyası bu kurulumda yoksa
+    // (ör. Mixamo verisi depoya girmez, yalnızca pakette bulunur) bir sonrakine geçilir.
+    const ids = reg ? [...new Set([want, reg.active, ...Object.keys(reg.libraries || {})])].filter((x) => x && reg.libraries?.[x]) : [];
+    for (const id of ids) {
+      const L = reg.libraries[id];
+      try {
+        const r = await fetch(L.file);
+        if (!r.ok) { info.errors.push(`${id}: dosya yok (${L.file})`); continue; }
+        const M = await r.json();
         const miss = NEEDED.filter((k) => !M.clips?.[k]);
-        if (!M.hierarchy || miss.length) info.errors.push(`${id}: eksik klip ${miss.join(', ')}`);
-        else {
-          Object.assign(info, { active: id, source: L.source?.name || id, torso: L.torso ?? 0.8, clips: Object.keys(M.clips) });
-          return M;
-        }
-      }
-    } catch (e) { info.errors.push('kütüphane yüklenemedi: ' + (e?.message || e)); }
+        if (!M.hierarchy || miss.length) { info.errors.push(`${id}: eksik klip ${miss.join(', ')}`); continue; }
+        Object.assign(info, { active: id, source: L.source?.name || id, torso: L.torso ?? 0.8, maxWarp: L.maxWarp, clips: Object.keys(M.clips) });
+        return M;
+      } catch (e) { info.errors.push(`${id}: yüklenemedi (${e?.message || e})`); }
+    }
   }
   try { return await (await fetch('assets/anim/mocap.json')).json(); } catch (e) { info.errors.push('mocap.json yüklenemedi'); return null; }
 }
