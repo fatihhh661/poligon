@@ -620,7 +620,21 @@ export class Rig {
     for (const side of ['Left', 'Right']) {
       const foot = B(side + 'Foot'), toe = B(side + 'ToeBase');
       const fp = wpos(foot), tp = wpos(toe), q = foot.getWorldQuaternion(new THREE.Quaternion());
-      const fyaw = yawOf(tp.clone().sub(fp));
+      // Ayak yönü. Parmak-bilek vektörünün yatay izdüşümü ayak dikleşince (topuk kalkışı, salınım başı)
+      // neredeyse sıfıra iner ve yönü 150°'ye varan sıçramalar yapıyordu (ayak "çırpıyordu").
+      // Yön, ayak dikleşse de yatay kalan yanal (menteşe) ekseninden alınır; iki yöntem arasındaki
+      // sabit fark ilk karede ölçülür, böylece duruş ve adım yönleri eskisiyle aynı kalır.
+      const toeYaw = yawOf(tp.clone().sub(fp));
+      const FA = (this._footAx ||= {});
+      if (!FA[side]) {
+        const loc = V(1, 0, 0).transformDirection(g.matrixWorld).applyQuaternion(q.clone().invert());
+        const ax = ['x', 'y', 'z'].reduce((b, k) => (Math.abs(loc[k]) > Math.abs(loc[b]) ? k : b), 'x');
+        const lat = V(); lat[ax] = Math.sign(loc[ax]) || 1;
+        const s0 = lat.clone().applyQuaternion(q);
+        FA[side] = { lat, off: wrapA(toeYaw - Math.atan2(s0.z, -s0.x)) };
+      }
+      const sW = FA[side].lat.clone().applyQuaternion(q);
+      const fyaw = Math.hypot(sW.x, sW.z) > 0.3 ? wrapA(Math.atan2(sW.z, -sW.x) + FA[side].off) : toeYaw;
       const vat = fp.clone().sub(tp); vat.y = 0; // ayak bileği, parmak tabanına göre (kayıttaki topuk kalkışı dahil)
       // ayak yönü fy iken bileğin parmak tabanına göre yeri
       const rv = (fy) => vat.clone().applyAxisAngle(up, wrapA(fy - fyaw));
@@ -638,7 +652,9 @@ export class Rig {
       const yawW = fyaw + ((L.rho * Math.PI) / 180) * 0.6; // ayak ucu adım yönüne kısmen döner
       const f = F[side];
       // kilitli ayakta parmak tabanı yerde sabit; bilek, topuk kalkışıyla onun etrafında döner
-      const lockedAnkle = () => { const a = f.lock.clone().add(rv(f.lockYaw)); a.y = wp.y; return a; };
+      // dururken kilitli ayak yere oturur: bekleme kaydındaki ayak yüksekliği bu modelde yerin ~6 cm
+      // üstünde kalıyordu (ayaklar havada); kalça gerekirse legsTo içinde iner
+      const lockedAnkle = () => { const a = f.lock.clone().add(rv(f.lockYaw)); a.y = THREE.MathUtils.lerp(wp.y, gy, smooth01(L.w.Idle || 0)); return a; };
       const plantAt = (ankle, fy) => { f.mode = 'plant'; f.lock = toeOf(ankle, fy); f.lock.y = 0; f.lockYaw = fy; };
       if (reset || f.mode === 'init' || kneel) plantAt(wp, yawW);
       else if (moving) {
@@ -655,7 +671,9 @@ export class Rig {
           const err = Math.hypot(la.x - wp.x, la.z - wp.z), yerr = Math.abs(wrapA(f.lockYaw - yawW));
           f.err = err;
           const o = F[side === 'Left' ? 'Right' : 'Left'];
-          const otherBusy = o.mode === 'step' && o.u < 0.65;
+          // diğer ayak havadayken (salınımdan inen ya da düzeltme adımındaki) bu ayak kalkmaz:
+          // eskiden durunca iki ayak aynı anda kalkıyor, asker bir an havada kalıyordu
+          const otherBusy = o.mode === 'swing' || (o.mode === 'step' && o.u < 0.65);
           if ((err > 0.13 || yerr > 0.55) && !otherBusy && (o.mode !== 'plant' || err >= (o.err || 0) - 0.02)) {
             f.mode = 'step'; f.u = 0; f.from = la; f.fromYaw = f.lockYaw; f.dur = 0.3;
           }
@@ -728,12 +746,23 @@ export class Rig {
       // etrafında döner, topuk kalkar (gerçek yürüyüşteki itiş anı)
       let p = T[side].p, qf = T[side].q;
       const toeP = T[side].toe, reach = this.legLen * 0.985, ulp = wpos(ul);
+      const ax = up.clone().cross(ff).normalize();
+      // gereken topuk kalkış açısı (bacak boyu yetmiyorsa); en fazla ~57°
+      let need = 0;
       if (toeP && ulp.distanceTo(p) > reach) {
-        const v0 = p.clone().sub(toeP), ax = up.clone().cross(ff).normalize();
-        let lo = 0, hi = 1.25;
+        const v0 = p.clone().sub(toeP);
+        let lo = 0, hi = 1.0;
         for (let it = 0; it < 14; it++) { const m = (lo + hi) / 2; if (ulp.distanceTo(toeP.clone().add(v0.clone().applyAxisAngle(ax, m))) > reach) lo = m; else hi = m; }
-        p = toeP.clone().add(v0.clone().applyAxisAngle(ax, hi));
-        qf = new THREE.Quaternion().setFromAxisAngle(ax, hi).multiply(qf);
+        need = hi;
+      }
+      // açı zamana yayılır: eskiden her karede sıfırdan hesaplandığı için koşul açılıp kapanınca ayak
+      // tek karede 0°↔72° atlıyordu. Kalkışta hızlı (insan itişi), bırakışta daha yavaş söner.
+      const RL = (this._roll ||= { Left: 0, Right: 0 });
+      RL[side] += (need - RL[side]) * (dt > 0 ? 1 - Math.exp(-dt * (need > RL[side] ? 30 : 12)) : 1);
+      const ra = RL[side];
+      if (ra > 1e-3) {
+        if (toeP) p = toeP.clone().add(p.clone().sub(toeP).applyAxisAngle(ax, ra)); // parmak tabanı etrafında
+        qf = new THREE.Quaternion().setFromAxisAngle(ax, ra).multiply(qf);
       }
       twoBoneIK(ul, B(side + 'Leg'), foot, p, pole);
       const pq = foot.parent.getWorldQuaternion(new THREE.Quaternion());
@@ -742,7 +771,30 @@ export class Rig {
     }
   }
 
+  /**
+   * Geliştirici teşhisi (arayüzsüz; konsoldan: __pp.play.rig.diag()). Etkin hareket kütüphanesi,
+   * yükleme hataları, klip ağırlıkları, adım fazı/kadans/esnetme, ayak modları, güncelleme süresi.
+   */
+  diag() {
+    const L = this.loco || {}, f = (x) => (Number.isFinite(x) ? +x.toFixed(3) : x);
+    const bad = [];
+    this.root?.traverse((o) => { if (o.isBone && !(Number.isFinite(o.quaternion.x) && Number.isFinite(o.quaternion.w))) bad.push(o.name); });
+    return {
+      kutuphane: A.animInfo,
+      klipler: Object.fromEntries(Object.entries(this.actions || {}).map(([k, a]) => [k, { sure: f(a.getClip().duration), agirlik: f(L.w?.[k] ?? a.getEffectiveWeight()) }])),
+      faz: f(L.phase), kadans: f(L.cad), esnetme: f(L.warp), kalcaDonus: f(L.theta), adimYonu: f(L.rho),
+      ayak: this.feet ? { sol: this.feet.Left.mode, sag: this.feet.Right.mode } : null,
+      gecersizKemik: bad, guncellemeMs: f(this._ms),
+    };
+  }
+
   update(dt) {
+    const t0 = performance.now();
+    this._update(dt);
+    this._ms = (this._ms ?? 0) * 0.9 + (performance.now() - t0) * 0.1;
+  }
+
+  _update(dt) {
     if (!this.root) return;
     const g = this.group, root = this.root, B = this.B, s = this.state;
     if (this.mocap) this.stepLoco(dt); else this.mixer.update(dt);
@@ -1064,9 +1116,12 @@ export class Rig {
     const tilt = (a) => new THREE.Quaternion().setFromAxisAngle(ax, -a);
     // adım ritmi: omuzlar kalçaya ters yönde çok az döner, gövde iniş anında hafif çöker
     const ph = (this.loco?.phase || 0) * Math.PI * 2, mvw = Math.min(1, (s.locoSpeed || 0) / 1.2);
+    // düzeltme payı kütüphaneye göre: CMU (kambur kayıt) 0,8; dik ve doğal kayıtlarda daha az,
+    // böylece kaydın gerçek gövde hareketi (ağırlık aktarımı, omuz-kalça karşı dönüşü) korunur
+    const kt = Math.min(1.1, Math.max(0, (A.animInfo?.torso ?? 0.8) / 0.8));
     const plan = {
-      Spine: [lean * 0.35, 0.8], Spine1: [lean * 0.7, 0.8], Spine2: [lean, 0.8],
-      Neck: [lean * 0.4, 0.85], Head: [0, 0.85], LeftShoulder: [lean, 0.7], RightShoulder: [lean, 0.7],
+      Spine: [lean * 0.35, 0.8 * kt], Spine1: [lean * 0.7, 0.8 * kt], Spine2: [lean, 0.8 * kt],
+      Neck: [lean * 0.4, Math.min(0.85, 0.85 * kt + 0.15)], Head: [0, Math.min(0.85, 0.85 * kt + 0.25)], LeftShoulder: [lean, 0.7 * kt], RightShoulder: [lean, 0.7 * kt],
     };
     const pw = new THREE.Quaternion(), cur = new THREE.Quaternion(), tgt = new THREE.Quaternion();
     for (const n of UPPER) {
@@ -1076,7 +1131,7 @@ export class Rig {
       b.parent.getWorldQuaternion(pw);
       cur.copy(pw).multiply(b.quaternion);
       tgt.copy(gq).multiply(tilt(a));
-      if (n === 'Spine2') tgt.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), -Math.sin(ph) * 0.05 * mvw));
+      if (n === 'Spine2') tgt.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), -Math.sin(ph) * 0.05 * mvw * Math.min(1, kt)));
       tgt.multiply(rel);
       cur.slerp(tgt, w);
       b.quaternion.copy(pw.invert().multiply(cur));

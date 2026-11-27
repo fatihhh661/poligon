@@ -33,7 +33,7 @@ export async function loadAssets(renderer, onProgress = () => {}) {
       A.pbr[k] = { map, normalMap, arm };
     });
   }
-  jobs.push(async () => { try { A.mocap = await (await fetch('assets/anim/mocap.json')).json(); } catch (e) { A.mocap = null; } });
+  jobs.push(async () => { A.mocap = await loadMotionLibrary(); });
   // karakterin yüksek çözünürlüklü (KTX2) dokuları; yüklenemezse eski görünüm
   jobs.push(async () => { A.charHD = await loadCharacterTextures(renderer); });
   jobs.push(async () => { A.tex.branch = await tex('assets/tex/branch.png'); });
@@ -66,6 +66,36 @@ export async function loadAssets(renderer, onProgress = () => {}) {
   await Promise.all(jobs.map((j) => j().then(() => onProgress(++done / jobs.length))));
   A.ok = true;
   return A;
+}
+
+/**
+ * Hareket kütüphanesi: assets/anim/library.json merkezi kaydındaki etkin kütüphane yüklenir
+ * (scripts/import-anim.mjs ile üretilir). Yoksa, bozuksa ya da gerekli klipler eksikse eski
+ * CMU kayıtları (mocap.json) kullanılır; program hiçbir durumda bu yüzden açılmaz hale gelmez.
+ * Geliştirici karşılaştırması (arayüzsüz): localStorage 'pp.animLib' = 'cmu' (eski) | kütüphane kimliği.
+ */
+const NEEDED = ['Idle', 'Walk', 'Run', 'WalkBack'];
+async function loadMotionLibrary() {
+  const info = (A.animInfo = { active: 'cmu', source: 'CMU (eski, 6 klip)', torso: 0.8, errors: [] });
+  let want = null;
+  try { want = localStorage.getItem('pp.animLib'); } catch (e) { /* */ }
+  if (want !== 'cmu') {
+    try {
+      const reg = await (await fetch('assets/anim/library.json')).json();
+      const id = want && reg.libraries?.[want] ? want : reg.active;
+      const L = id && reg.libraries?.[id];
+      if (L) {
+        const M = await (await fetch(L.file)).json();
+        const miss = NEEDED.filter((k) => !M.clips?.[k]);
+        if (!M.hierarchy || miss.length) info.errors.push(`${id}: eksik klip ${miss.join(', ')}`);
+        else {
+          Object.assign(info, { active: id, source: L.source?.name || id, torso: L.torso ?? 0.8, clips: Object.keys(M.clips) });
+          return M;
+        }
+      }
+    } catch (e) { info.errors.push('kütüphane yüklenemedi: ' + (e?.message || e)); }
+  }
+  try { return await (await fetch('assets/anim/mocap.json')).json(); } catch (e) { info.errors.push('mocap.json yüklenemedi'); return null; }
 }
 
 const hdrCache = {};
