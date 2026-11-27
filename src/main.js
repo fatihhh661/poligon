@@ -130,6 +130,10 @@ async function boot() {
   await nextFrame();
   await nextFrame();
   progress(1, 'Hazır');
+  // Açılış başarılı: gölgelendiriciler derlendi ve kareler çizildi. Bildirim açılış animasyonundan sonra
+  // gönderildiğinde, pencere arka planda kalınca tarayıcı zamanlayıcıları kısıp animasyonu dakikalarca
+  // uzatıyor, bildirim gitmiyor ve sonraki açılış yanlışlıkla kalıcı uyumluluk moduna düşüyordu.
+  window.native?.booted?.();
 
   minimap = new Minimap($('#mmCanvas'), ed, engine);
   window.__pp = { engine, env, ed, renderThumbs }; // renderThumbs: önizleme PNG'lerini yeniden üretmek için
@@ -140,7 +144,6 @@ async function boot() {
   while (performance.now() - T0 < minShow && !skipRequested) await wait(50);
   await revealScene();
   showMenu(true);
-  window.native?.booted?.();
   const gpu = engine.gpuName();
   if (/Intel|UHD|Iris|Radeon\(TM\) Graphics|Microsoft Basic|SwiftShader/i.test(gpu) && !/NVIDIA|RTX|GTX/i.test(gpu))
     setTimeout(() => modal({ title: 'Ekran kartı uyarısı', ikon: 'alert', width: 600, body: `<div class="about"><p>Program şu an <b>${esc(gpu)}</b> ile çalışıyor. Bu, işlemcinin içindeki zayıf grafik çipi; yüksek grafiklerde kasmanın sebebi budur.</p><p>NVIDIA kartını kullanmak için: <b>Windows Ayarlar → Sistem → Ekran → Grafik</b> → listeden <b>PoligonPro</b>'yu seçin (yoksa <b>Gözat</b> ile PoligonPro.exe'yi ekleyin) → <b>Seçenekler → Yüksek performans</b> → Kaydet. Sonra programı yeniden açın.</p></div>` }), 1500);
