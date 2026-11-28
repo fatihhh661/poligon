@@ -31,7 +31,9 @@ const paths = await packager({
   appCopyright: 'Poligon Pro',
   appVersion: '1.0.0',
   win32metadata: { CompanyName: 'Poligon Pro', FileDescription: 'Poligon Pro - Parkur Tasarım ve Sunum Sistemi', ProductName: 'Poligon Pro', InternalName: 'PoligonPro', OriginalFilename: 'PoligonPro.exe' },
-  ignore: [/^\/indir($|\/)/, /^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /^\/DEVAM\.md$/, /^\/ekran-goruntuleri($|\/)/, /\.map$/, /^\/build\/icon\.ico$/],
+  ignore: [/^\/indir($|\/)/, /^\/build\/splash\.bmp$/, /^\/src($|\/)/, /^\/scripts($|\/)/, /^\/dist($|\/)/, /^\/\.git/, /^\/README\.md$/, /^\/DEVAM\.md$/, /^\/ekran-goruntuleri($|\/)/, /\.map$/, /^\/build\/icon\.ico$/,
+    // ActorCore lisansı: hareket verisi exe'ye yalnızca şifreli olarak girebilir; deneme verisi pakete alınmaz
+    /^\/app\/assets\/anim\/lib\/actorcore-[^/]*\.json$/],
 });
 console.log('Paket:', paths);
 const zip = join(out, 'PoligonPro-Windows.zip');
