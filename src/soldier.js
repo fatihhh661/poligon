@@ -235,7 +235,8 @@ function mocapSource(M = A.mocap) {
     const tracks = Object.entries(c.q).map(([bn, q]) => new THREE.QuaternionKeyframeTrack(bn + '.quaternion', times, q));
     tracks.push(new THREE.VectorKeyframeTrack(bones[0].name + '.position', times, c.hp));
     const clip = new THREE.AnimationClip(name, c.dur, tracks);
-    clip.userData = { speed: c.speed, stride: c.stride, ph0: c.ph0, ang: c.ang };
+    // kaynak etiketi (tanılama): hangi kütüphane, hangi ham dosya, hangi döngü penceresi
+    clip.userData = { speed: c.speed, stride: c.stride, ph0: c.ph0, ang: c.ang, kaynak: { kutuphane: M.id || 'cmu', dosya: c.src?.file || null, pencere: c.src ? [c.src.t0, c.src.t1] : null } };
     return clip;
   });
   return { S: holder, clips };
@@ -847,6 +848,23 @@ export class Rig {
       gecersizKemik: bad, guncellemeMs: f(this._ms),
       deri: A.deri, sistem: this.v2 ? 'v2' : 'v1', test: this.testMode || null, duzeltici: this.corrOn ? this.corr.count : 0,
       v2: this.v2 ? { ...this.v2.dbg, klipler: this.v2.top() } : null,
+      // şu an oynayan klipler: ağırlık, oynatma zamanı/hızı ve gerçek kaynak (ActorCore / Mixamo / CMU)
+      aktif: this.v2 ? Object.entries(this.v2.w).filter(([, w]) => w > 0.01).sort((a, b) => b[1] - a[1]).map(([n, w]) => {
+        const c = this.actions[n].getClip(), u = c.userData || {};
+        return { klip: n, agirlik: f(w), zaman: f(this.actions[n].time), sure: f(c.duration), oynatmaHizi: u.speed > 0.05 ? f((this.state.locoSpeed || 0) / u.speed) : 1, kaynak: u.kaynak || null };
+      }) : null,
+      // kemikleri değiştiren katmanlar (v2, bu karede): hangi katman hangi kemiğe dokunuyor
+      katmanlar: this.v2 ? {
+        hareketKaydi: 'tüm iskelet (v2 harmanlama)',
+        zeminTemasi: 'bacaklar (yalnızca ayak zeminin altına inerse)',
+        burulma: Math.abs(this.state.twist || 0) > 1e-4 ? 'Spine, Spine1, Spine2, Neck' : null,
+        nisanEgimi: Math.abs(this.state.pitch || 0) > 1e-4 ? 'Spine2, Neck' : null,
+        koseAcma: Math.abs(this.state.lean || 0) > 1e-3 ? 'Spine, Spine1, Spine2, Neck' : null,
+        geriTepme: (this.state.recoil || 0) > 0.01 ? 'Spine2' : null,
+        tufekTutusu: this.weapon ? 'kollar, eller, parmaklar (IK)' : null,
+        duzelticiKemikler: this.corrOn ? `${this.corr.count} yardımcı kemik` : null,
+      } : null,
+      geriDonus: A.animInfo?.errors?.length ? A.animInfo.errors : null,
     };
   }
 
@@ -1599,7 +1617,11 @@ export class Rig {
 
 /** Editördeki sabit atıcı figürü */
 // geliştirici erişimi (arayüz yok): karşılaştırma testleri kaynak iskeleti ve klipleri buradan okur
-if (typeof window !== 'undefined') window.__ppAnimDev = { get A() { return A; }, mocapSource, retargetClips, THREE };
+if (typeof window !== 'undefined') {
+  window.__ppAnimDev = { get A() { return A; }, mocapSource, retargetClips, THREE };
+  // geliştirici tanılaması (arayüz yok): geliştirici konsolunda (Ctrl+Shift+I) __ppAnimDiag()
+  window.__ppAnimDiag = () => window.__pp?.play?.rig?.diag?.() ?? 'oyun modu açık değil';
+}
 
 export function buildSoldier(pose = 'ayakta', silah = 'tufek') {
   if (!A.models.soldier) return null;
