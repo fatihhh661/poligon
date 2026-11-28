@@ -112,9 +112,399 @@
           "t0": 0,
           "t1": 0.983,
           "loopErr": 0.3227
+        },
+        "idle_aim": {
+          "dur": 2.1,
+          "speed": 0,
+          "stride": 0,
+          "frames": 127,
+          "file": "idle aiming.fbx",
+          "t0": 0,
+          "t1": 2.1,
+          "loopErr": 0
+        },
+        "cidle": {
+          "dur": 2.1,
+          "speed": 0,
+          "stride": 0,
+          "frames": 127,
+          "file": "idle crouching.fbx",
+          "t0": 0,
+          "t1": 2.1,
+          "loopErr": 0
+        },
+        "cidle_aim": {
+          "dur": 2.1,
+          "speed": 0,
+          "stride": 0,
+          "frames": 127,
+          "file": "idle crouching aiming.fbx",
+          "t0": 0,
+          "t1": 2.1,
+          "loopErr": 0
+        },
+        "turn_l": {
+          "dur": 0.9833,
+          "speed": 0,
+          "stride": 0,
+          "frames": 60,
+          "file": "turn 90 left.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0
+        },
+        "turn_r": {
+          "dur": 0.9833,
+          "speed": 0,
+          "stride": 0,
+          "frames": 60,
+          "file": "turn 90 right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0
+        },
+        "cturn_l": {
+          "dur": 1.25,
+          "speed": 0,
+          "stride": 0,
+          "frames": 76,
+          "file": "crouching turn 90 left.fbx",
+          "t0": 0,
+          "t1": 1.25,
+          "loopErr": 0
+        },
+        "cturn_r": {
+          "dur": 1.25,
+          "speed": 0,
+          "stride": 0,
+          "frames": 76,
+          "file": "crouching turn 90 right.fbx",
+          "t0": 0,
+          "t1": 1.25,
+          "loopErr": 0
+        },
+        "walk_f": {
+          "dur": 0.9833,
+          "speed": 1.848,
+          "stride": 1.818,
+          "frames": 60,
+          "file": "walk forward.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.321
+        },
+        "run_f": {
+          "dur": 0.5,
+          "speed": 4.64,
+          "stride": 2.32,
+          "frames": 31,
+          "file": "run forward.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.5396
+        },
+        "sprint_f": {
+          "dur": 0.5,
+          "speed": 6.96,
+          "stride": 3.48,
+          "frames": 31,
+          "file": "sprint forward.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.1465
+        },
+        "cwalk_f": {
+          "dur": 1,
+          "speed": 1.97,
+          "stride": 1.97,
+          "frames": 61,
+          "file": "walk crouching forward.fbx",
+          "t0": 0,
+          "t1": 1,
+          "loopErr": 0.0466
+        },
+        "walk_fl": {
+          "dur": 0.9833,
+          "speed": 1.851,
+          "stride": 1.82,
+          "frames": 60,
+          "file": "walk forward left.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.3173
+        },
+        "run_fl": {
+          "dur": 0.5,
+          "speed": 4.64,
+          "stride": 2.32,
+          "frames": 31,
+          "file": "run forward left.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.3188
+        },
+        "sprint_fl": {
+          "dur": 0.4833,
+          "speed": 6.961,
+          "stride": 3.364,
+          "frames": 30,
+          "file": "sprint forward left.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.2129
+        },
+        "cwalk_fl": {
+          "dur": 1,
+          "speed": 1.97,
+          "stride": 1.97,
+          "frames": 61,
+          "file": "walk crouching forward left.fbx",
+          "t0": 0,
+          "t1": 1,
+          "loopErr": 0.054
+        },
+        "walk_l": {
+          "dur": 1,
+          "speed": 1.856,
+          "stride": 1.856,
+          "frames": 61,
+          "file": "walk left.fbx",
+          "t0": 0,
+          "t1": 1,
+          "loopErr": 0.3928
+        },
+        "run_l": {
+          "dur": 0.5,
+          "speed": 4.64,
+          "stride": 2.32,
+          "frames": 31,
+          "file": "run left.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.5186
+        },
+        "sprint_l": {
+          "dur": 0.4833,
+          "speed": 6.959,
+          "stride": 3.363,
+          "frames": 30,
+          "file": "sprint left.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.5842
+        },
+        "cwalk_l": {
+          "dur": 0.9833,
+          "speed": 1.97,
+          "stride": 1.937,
+          "frames": 60,
+          "file": "walk crouching left.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.2771
+        },
+        "walk_bl": {
+          "dur": 0.9833,
+          "speed": 1.855,
+          "stride": 1.824,
+          "frames": 60,
+          "file": "walk backward left.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.4011
+        },
+        "run_bl": {
+          "dur": 0.5,
+          "speed": 4.64,
+          "stride": 2.32,
+          "frames": 31,
+          "file": "run backward left.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.2743
+        },
+        "sprint_bl": {
+          "dur": 0.4833,
+          "speed": 6.96,
+          "stride": 3.364,
+          "frames": 30,
+          "file": "sprint backward left.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.4305
+        },
+        "cwalk_bl": {
+          "dur": 0.9833,
+          "speed": 1.969,
+          "stride": 1.936,
+          "frames": 60,
+          "file": "walk crouching backward left.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.0434
+        },
+        "walk_b": {
+          "dur": 0.9833,
+          "speed": 1.859,
+          "stride": 1.828,
+          "frames": 60,
+          "file": "walk backward.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.3227
+        },
+        "run_b": {
+          "dur": 0.5,
+          "speed": 4.64,
+          "stride": 2.32,
+          "frames": 31,
+          "file": "run backward.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.2909
+        },
+        "sprint_b": {
+          "dur": 0.4833,
+          "speed": 6.959,
+          "stride": 3.364,
+          "frames": 30,
+          "file": "sprint backward.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.4318
+        },
+        "cwalk_b": {
+          "dur": 0.9833,
+          "speed": 1.969,
+          "stride": 1.937,
+          "frames": 60,
+          "file": "walk crouching backward.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.0737
+        },
+        "walk_br": {
+          "dur": 0.9833,
+          "speed": 1.859,
+          "stride": 1.828,
+          "frames": 60,
+          "file": "walk backward right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.3243
+        },
+        "run_br": {
+          "dur": 0.4833,
+          "speed": 4.661,
+          "stride": 2.253,
+          "frames": 30,
+          "file": "run backward right.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.3072
+        },
+        "sprint_br": {
+          "dur": 0.5,
+          "speed": 6.96,
+          "stride": 3.48,
+          "frames": 31,
+          "file": "sprint backward right.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.1553
+        },
+        "cwalk_br": {
+          "dur": 0.9833,
+          "speed": 1.969,
+          "stride": 1.937,
+          "frames": 60,
+          "file": "walk crouching backward right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.0723
+        },
+        "walk_r": {
+          "dur": 0.9833,
+          "speed": 1.862,
+          "stride": 1.831,
+          "frames": 60,
+          "file": "walk right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.4217
+        },
+        "run_r": {
+          "dur": 0.4833,
+          "speed": 4.628,
+          "stride": 2.237,
+          "frames": 30,
+          "file": "run right.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.533
+        },
+        "sprint_r": {
+          "dur": 0.4833,
+          "speed": 6.961,
+          "stride": 3.364,
+          "frames": 30,
+          "file": "sprint right.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.6603
+        },
+        "cwalk_r": {
+          "dur": 0.9833,
+          "speed": 1.971,
+          "stride": 1.938,
+          "frames": 60,
+          "file": "walk crouching right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.1986
+        },
+        "walk_fr": {
+          "dur": 0.9833,
+          "speed": 1.857,
+          "stride": 1.826,
+          "frames": 60,
+          "file": "walk forward right.fbx",
+          "t0": 0,
+          "t1": 0.983,
+          "loopErr": 0.2898
+        },
+        "run_fr": {
+          "dur": 0.4833,
+          "speed": 4.64,
+          "stride": 2.242,
+          "frames": 30,
+          "file": "run forward right.fbx",
+          "t0": 0,
+          "t1": 0.483,
+          "loopErr": 0.3022
+        },
+        "sprint_fr": {
+          "dur": 0.5,
+          "speed": 6.96,
+          "stride": 3.48,
+          "frames": 31,
+          "file": "sprint forward right.fbx",
+          "t0": 0,
+          "t1": 0.5,
+          "loopErr": 0.1195
+        },
+        "cwalk_fr": {
+          "dur": 1,
+          "speed": 1.97,
+          "stride": 1.97,
+          "frames": 61,
+          "file": "walk crouching forward right.fbx",
+          "t0": 0,
+          "t1": 1,
+          "loopErr": 0.0289
         }
       },
-      "imported": "2026-11-27"
+      "imported": "2026-11-28"
     }
   }
 }
