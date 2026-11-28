@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { loadCharacterTextures } from './characterLook.js';
+import { openPak } from './animpak.js';
 
 /** Fotoğraf tabanlı (Poly Haven, CC0) dokular, gökyüzleri ve modeller. */
 export const A = { pbr: {}, tex: {}, models: {}, anims: {}, ok: false };
@@ -106,15 +107,31 @@ async function loadMotionLibrary() {
     // sıra: seçilen, etkin, sonra kayıttaki diğerleri. Bir kütüphanenin dosyası bu kurulumda yoksa
     // (ör. Mixamo verisi depoya girmez, yalnızca pakette bulunur) bir sonrakine geçilir.
     const ids = reg ? [...new Set([want, reg.active, ...Object.keys(reg.libraries || {})])].filter((x) => x && reg.libraries?.[x]) : [];
+    // .pak: lisanslı veri şifreli paketlenir (animpak.js); .json: düz kütüphane
+    const readLib = async (file) => {
+      const r = await fetch(file);
+      if (!r.ok) return null;
+      return file.endsWith('.pak') ? openPak(await r.arrayBuffer()) : r.json();
+    };
+    A.mocapOverlay = null;
     for (const id of ids) {
       const L = reg.libraries[id];
       try {
-        const r = await fetch(L.file);
-        if (!r.ok) { info.errors.push(`${id}: dosya yok (${L.file})`); continue; }
-        const M = await r.json();
+        // katman kütüphanesi (base): kendi klipleri temel kütüphanedeki aynı adlı kliplerin yerine geçer,
+        // eksikleri (diğer yönler, çömelme, dönüşler) temelden gelir. Her biri kendi iskeletiyle aktarılır.
+        const B = L.base ? reg.libraries[L.base] : null;
+        if (L.base && !B) { info.errors.push(`${id}: temel kütüphane kayıtlı değil (${L.base})`); continue; }
+        const M = await readLib(B ? B.file : L.file);
+        if (!M) { info.errors.push(`${id}: dosya yok (${B ? B.file : L.file})`); continue; }
         const miss = NEEDED.filter((k) => !M.clips?.[k]);
         if (!M.hierarchy || miss.length) { info.errors.push(`${id}: eksik klip ${miss.join(', ')}`); continue; }
-        Object.assign(info, { active: id, source: L.source?.name || id, torso: L.torso ?? 0.8, maxWarp: L.maxWarp, clips: Object.keys(M.clips) });
+        let O = null;
+        if (B) {
+          O = await readLib(L.file);
+          if (!O?.hierarchy || !O.clips?.Idle) { info.errors.push(`${id}: katman dosyası yok ya da bozuk (${L.file})`); continue; }
+        }
+        A.mocapOverlay = O;
+        Object.assign(info, { active: id, source: L.source?.name || id, torso: L.torso ?? 0.8, maxWarp: L.maxWarp, clips: [...new Set([...Object.keys(M.clips), ...Object.keys(O?.clips || {})])], ...(O ? { katman: Object.keys(O.clips) } : {}) });
         return M;
       } catch (e) { info.errors.push(`${id}: yüklenemedi (${e?.message || e})`); }
     }

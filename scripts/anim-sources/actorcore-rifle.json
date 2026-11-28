@@ -1,0 +1,30 @@
+{
+  "id": "actorcore-rifle",
+  "activate": true,
+  "base": "mixamo-rifle",
+  "encrypt": true,
+  "profile": "cc",
+  "dir": "../../indir/actorcore-rifle",
+  "srcFps": 60,
+  "fps": 60,
+  "torso": 0.3,
+  "maxWarp": 1.1,
+  "source": {
+    "name": "ActorCore — Rifle Combat (Guard/Patrol) + Mixamo Rifle 8-Way",
+    "author": "Reallusion ActorCore; Adobe Mixamo",
+    "license": "ActorCore Standart Lisans (satın alındı, 28.11.2026): oyun/uygulama içinde kullanım; veri yalnızca şifreli paketlenir, ham dosya dağıtılamaz",
+    "url": "https://actorcore.reallusion.com",
+    "attribution": "Hareketler: Reallusion ActorCore, Adobe Mixamo",
+    "capture": "Optik hareket yakalama, Character Creator iskeleti, 60 fps, FBX (Unity hedefi), yalnızca hareket",
+    "note": "Ham FBX'ler depoya girmez (indir/actorcore-rifle, gitignore). İleri yönler ve bekleme ActorCore; diğer yönler, çömelme ve dönüşler temel kütüphaneden (base). Çıktı AES-GCM ile şifrelenir (.pak)."
+  },
+  "clips": [
+    { "key": "Idle", "file": "b-alert-slow-idle.fbx", "t0": 0, "t1": 5.58, "idle": true, "blend": 0.5 },
+    { "key": "idle_relax", "file": "aa-patrol-idle.fbx", "t0": 0, "t1": 3.5, "idle": true, "blend": 0.5 },
+    { "key": "walk_f", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0 },
+    { "key": "Walk", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0 },
+    { "key": "jog_f", "file": "b08-run-f-attack/b08-run-f-attack-loop.fbx", "t0": 0, "t1": 1.21, "L": [0.5, 1.21], "ang": 0 },
+    { "key": "run_f", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0 },
+    { "key": "Run", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0 }
+  ]
+}

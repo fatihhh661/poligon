@@ -222,8 +222,7 @@ function restPose(root) {
  */
 const retargetCache = {};
 /** CMU hareket kaydı iskeleti (BVH hiyerarşisi) ve klipleri */
-function mocapSource() {
-  const M = A.mocap;
+function mocapSource(M = A.mocap) {
   const bones = M.hierarchy.map((h) => { const b = new THREE.Bone(); b.name = h.n; b.position.fromArray(h.o); return b; });
   M.hierarchy.forEach((h, i) => { if (h.p >= 0) bones[h.p].add(bones[i]); });
   bones[0].position.set(0, M.clips.Idle.hp[1], 0); // dinlenme kalça yüksekliği
@@ -351,7 +350,16 @@ export class Rig {
     let clips;
     if (this.isMark && A.mocap) {
       const src = mocapSource();
-      clips = retargetClips(mark, src.S, src.clips, 'mocap', { spine: animSystemWanted() === 'v2' && !!A.mocap.clips?.walk_f });
+      const spine = animSystemWanted() === 'v2' && !!A.mocap.clips?.walk_f;
+      clips = retargetClips(mark, src.S, src.clips, 'mocap', { spine });
+      // katman kütüphanesi (ör. ActorCore ileri yönler): kendi iskeletinden ayrıca aktarılır, aynı adlı
+      // temel kliplerin yerine geçer. Aktarım sonrası klipler askerin iskeletinde olduğundan karışabilir.
+      if (A.mocapOverlay) {
+        const ov = mocapSource(A.mocapOverlay);
+        const oc = retargetClips(mark, ov.S, ov.clips, 'mocap-katman', { spine });
+        const names = new Set(oc.map((c) => c.name));
+        clips = [...clips.filter((c) => !names.has(c.name)), ...oc];
+      }
       this.mocap = true;
     } else clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
     for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);

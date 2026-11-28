@@ -79,12 +79,23 @@ export class LocomotionV2 {
     dirW[DIR_AT[i1]] = (dirW[DIR_AT[i1]] || 0) + t;
     // 3) tempo: yürüyüş ↔ koşu (Mixamo yürüyüş 1,85, koşu 4,64 m/sn). Depar kayıtları 7 m/sn olduğu için
     //    oyunun 4,2 m/sn deparında ağır çekim görünür; koşu kaydı bu hıza uyar.
+    //    Ara tempo (jog_, ör. ActorCore tüfek omuzda taktik ilerleme) bulunan yönlerde üç kademe:
+    //    yürüyüş ≤1,9 → ara tempo 3,0'da tepe → koşu ≥4,2. Ara tempo kaydı olmayan yönler eski iki kademede.
     const gRun = crouch ? 0 : smooth01((sp - 1.9) / (4.2 - 1.9));
+    const gJog = crouch ? 0 : sp <= 3.0 ? smooth01((sp - 1.9) / (3.0 - 1.9)) : 1 - smooth01((sp - 3.0) / (4.2 - 3.0));
+    const gRun3 = crouch ? 0 : smooth01((sp - 3.0) / (4.2 - 3.0));
     const sets = crouch ? [['cwalk_', 1]] : [['walk_', 1 - gRun], ['run_', gRun]];
     // harmanlanmış adım boyu → çevrim frekansı (ayak kaymasın)
     let stride = 0, sw = 0;
     const tgt = {};
-    for (const [pre, gw] of sets) for (const [d, dw] of Object.entries(dirW)) {
+    for (const [pre, gw0] of sets) for (const [d, dw] of Object.entries(dirW)) {
+      let gw = gw0;
+      if (!crouch && A_['jog_' + d]) {
+        gw = pre === 'walk_' ? 1 - gRun3 - gJog : gRun3;
+        const wj = pre === 'walk_' ? gJog * dw : 0; // ara tempo bir kez eklenir
+        if (wj > 0) { const nj = 'jog_' + d; stride += wj * M[nj].stride; sw += wj; tgt[nj] = (tgt[nj] || 0) + wj * mv; }
+        gw = Math.max(0, gw);
+      }
       const n = pre + d, w = gw * dw;
       if (!A_[n] || w <= 0) continue;
       stride += w * M[n].stride; sw += w;
@@ -106,6 +117,13 @@ export class LocomotionV2 {
     const idleW = still * (1 - this.turnW);
     if (A_[idleBase]) tgt[idleBase] = (tgt[idleBase] || 0) + idleW * (0.5 + 0.5 * aimBlend);
     if (A_[idleAlt]) tgt[idleAlt] = (tgt[idleAlt] || 0) + idleW * (0.5 - 0.5 * aimBlend);
+    // uzun süre kıpırdamadan ve nişan almadan ayakta beklerken rahat devriye duruşuna geçiş (varsa)
+    this.stillT = still > 0.98 && !crouch && this.aimW < 0.1 && this.turnW < 0.05 ? (this.stillT || 0) + dt : 0;
+    if (A_.idle_relax && tgt.Idle) {
+      this.relaxW = (this.relaxW || 0) + ((this.stillT > 6 ? 1 : 0) - (this.relaxW || 0)) * k(this.stillT > 6 ? 0.8 : 6);
+      tgt.idle_relax = tgt.Idle * this.relaxW;
+      tgt.Idle *= 1 - this.relaxW;
+    }
     if (this.turnW > 1e-3) {
       const tn = (crouch ? 'cturn_' : 'turn_') + (this.yawRate > 0 ? 'l' : 'r');
       if (A_[tn]) {

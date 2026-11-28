@@ -262,13 +262,28 @@ for (const sp of cfg.clips) {
 footPhases(out);
 const libDir = path.join(root, 'app/assets/anim/lib');
 fs.mkdirSync(libDir, { recursive: true });
-const outFile = path.join(libDir, cfg.id + '.json');
-fs.writeFileSync(outFile, JSON.stringify(out));
+// lisanslı veri (encrypt): yalnızca şifreli .pak yazılır; düz JSON hiç diske yazılmaz
+const ext = cfg.encrypt ? '.pak' : '.json';
+const outFile = path.join(libDir, cfg.id + ext);
+if (cfg.encrypt) {
+  const { PAK_MAGIC, pakKeyBytes } = await import('../src/animpak.js');
+  const { webcrypto, randomBytes } = await import('node:crypto');
+  const { gzipSync } = await import('node:zlib');
+  const subtle = webcrypto.subtle;
+  const key = await subtle.importKey('raw', await pakKeyBytes(subtle), 'AES-GCM', false, ['encrypt']);
+  const iv = randomBytes(12);
+  const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, gzipSync(Buffer.from(JSON.stringify(out)), { level: 9 })));
+  fs.writeFileSync(outFile, Buffer.concat([Buffer.from(PAK_MAGIC), iv, ct]));
+  const stale = path.join(libDir, cfg.id + '.json');
+  if (fs.existsSync(stale)) fs.rmSync(stale);
+} else fs.writeFileSync(outFile, JSON.stringify(out));
 // merkezi kayıt
 const regFile = path.join(root, 'app/assets/anim/library.json');
 const reg = fs.existsSync(regFile) ? JSON.parse(fs.readFileSync(regFile, 'utf8')) : { active: null, libraries: {} };
 reg.libraries[cfg.id] = {
-  file: `assets/anim/lib/${cfg.id}.json`, source: cfg.source, fps: outFps, torso: cfg.torso ?? 0.8, ...(cfg.maxWarp ? { maxWarp: cfg.maxWarp } : {}),
+  file: `assets/anim/lib/${cfg.id}${ext}`, source: cfg.source, fps: outFps, torso: cfg.torso ?? 0.8, ...(cfg.maxWarp ? { maxWarp: cfg.maxWarp } : {}),
+  // katman kütüphanesi: eksik klipler (diğer yönler, çömelme, dönüşler) temel kütüphaneden gelir
+  ...(cfg.base ? { base: cfg.base } : {}),
   clips: Object.fromEntries(Object.entries(out.clips).map(([k, c]) => [k, { dur: c.dur, speed: c.speed, stride: c.stride, frames: c.hp.length / 3, ...c.src }])),
   imported: new Date().toISOString().slice(0, 10),
 };

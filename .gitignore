@@ -9,3 +9,6 @@ ekran-goruntuleri/
 app/assets/anim/lib/mixamo-*.json
 # ActorCore kaynaklı hareket verisi de depoya girmez (lisans ürün bazında doğrulanacak)
 app/assets/anim/lib/actorcore-*.json
+# Satın alınmış ActorCore ham FBX kayıtları (lisans: dağıtılamaz) ve şifreli kütüphane (yalnızca pakette)
+indir/
+app/assets/anim/lib/actorcore-*.pak

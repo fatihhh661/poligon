@@ -1,5 +1,5 @@
 {
-  "active": "mixamo-rifle",
+  "active": "actorcore-rifle",
   "libraries": {
     "100style-neutral": {
       "file": "assets/anim/lib/100style-neutral.json",
@@ -502,6 +502,95 @@
           "t0": 0,
           "t1": 1,
           "loopErr": 0.0289
+        }
+      },
+      "imported": "2026-11-28"
+    },
+    "actorcore-rifle": {
+      "file": "assets/anim/lib/actorcore-rifle.pak",
+      "source": {
+        "name": "ActorCore — Rifle Combat (Guard/Patrol) + Mixamo Rifle 8-Way",
+        "author": "Reallusion ActorCore; Adobe Mixamo",
+        "license": "ActorCore Standart Lisans (satın alındı, 28.11.2026): oyun/uygulama içinde kullanım; veri yalnızca şifreli paketlenir, ham dosya dağıtılamaz",
+        "url": "https://actorcore.reallusion.com",
+        "attribution": "Hareketler: Reallusion ActorCore, Adobe Mixamo",
+        "capture": "Optik hareket yakalama, Character Creator iskeleti, 60 fps, FBX (Unity hedefi), yalnızca hareket",
+        "note": "Ham FBX'ler depoya girmez (indir/actorcore-rifle, gitignore). İleri yönler ve bekleme ActorCore; diğer yönler, çömelme ve dönüşler temel kütüphaneden (base). Çıktı AES-GCM ile şifrelenir (.pak)."
+      },
+      "fps": 60,
+      "torso": 0.3,
+      "maxWarp": 1.1,
+      "base": "mixamo-rifle",
+      "clips": {
+        "Idle": {
+          "dur": 5.5833,
+          "speed": 0,
+          "stride": 0,
+          "frames": 336,
+          "file": "b-alert-slow-idle.fbx",
+          "t0": 0,
+          "t1": 5.583,
+          "loopErr": 0
+        },
+        "idle_relax": {
+          "dur": 3.5,
+          "speed": 0,
+          "stride": 0,
+          "frames": 211,
+          "file": "aa-patrol-idle.fbx",
+          "t0": 0,
+          "t1": 3.5,
+          "loopErr": 0
+        },
+        "walk_f": {
+          "dur": 1.8833,
+          "speed": 0.715,
+          "stride": 1.347,
+          "frames": 114,
+          "file": "b10-walk-f-loop.fbx",
+          "t0": 1.433,
+          "t1": 3.317,
+          "loopErr": 0.1245
+        },
+        "Walk": {
+          "dur": 1.8833,
+          "speed": 0.715,
+          "stride": 1.347,
+          "frames": 114,
+          "file": "b10-walk-f-loop.fbx",
+          "t0": 1.433,
+          "t1": 3.317,
+          "loopErr": 0.1245
+        },
+        "jog_f": {
+          "dur": 0.6,
+          "speed": 3.583,
+          "stride": 2.15,
+          "frames": 37,
+          "file": "b08-run-f-attack-loop.fbx",
+          "t0": 0.533,
+          "t1": 1.133,
+          "loopErr": 0.0596
+        },
+        "run_f": {
+          "dur": 0.55,
+          "speed": 4.615,
+          "stride": 2.538,
+          "frames": 34,
+          "file": "b01-run-f-loop.fbx",
+          "t0": 0.333,
+          "t1": 0.883,
+          "loopErr": 0.036
+        },
+        "Run": {
+          "dur": 0.55,
+          "speed": 4.615,
+          "stride": 2.538,
+          "frames": 34,
+          "file": "b01-run-f-loop.fbx",
+          "t0": 0.333,
+          "t1": 0.883,
+          "loopErr": 0.036
         }
       },
       "imported": "2026-11-28"
