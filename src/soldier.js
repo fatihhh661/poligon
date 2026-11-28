@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 import { A } from './assets.js';
+import { LocomotionV2, CorrectiveBones, animSystemWanted } from './animv2.js';
 import { characterMaterial } from './characterLook.js';
 
 // ----------------- yardımcılar -----------------
@@ -238,8 +239,14 @@ function mocapSource() {
   return { S: holder, clips };
 }
 
-function retargetClips(tgtSrcModel, srcObj = null, srcClips = null, key = 'soldier') {
-  const cache = (retargetCache[key] ||= {});
+// Omurga zinciri (v2): kaynak ve hedefin dinlenme pozlarında omurga/boyun/baş yönleri de hizalanır.
+// Character Creator iskeletinin dinlenme pozunda omurga öne kavisli; yalnızca kollar ve bacaklar
+// hizalanınca kaydın gövde eğimi bu kavisin üstüne ekleniyor, asker her durumda ~7° fazla öne
+// eğiliyordu (ölçüm: yürüyüşte baş kalçanın 21 yerine 31 cm önünde). Eski sistem bunu "gövde
+// dikleştirme" katmanıyla zorla örtüyordu.
+const SPINE_CHILD = { Spine: 'Spine1', Spine1: 'Spine2', Spine2: 'Neck', Neck: 'Head' };
+function retargetClips(tgtSrcModel, srcObj = null, srcClips = null, key = 'soldier', opt = {}) {
+  const cache = (retargetCache[key + (opt.spine ? ':omurga' : '')] ||= {});
   if (cache.done) return cache.clips;
   const S = srcObj || skClone(A.models.soldier), T = skClone(tgtSrcModel);
   const holder = new THREE.Group();
@@ -251,7 +258,7 @@ function retargetClips(tgtSrcModel, srcObj = null, srcClips = null, key = 'soldi
   const order = [];
   T.traverse((o) => { if (o.isBone && o.name.startsWith('mixamorig')) order.push(o.name.slice(9)); });
   for (const n of order) {
-    const c = LIMB_CHILD[n];
+    const c = LIMB_CHILD[n] || (opt.spine ? SPINE_CHILD[n] : null);
     if (!c || !sb[n] || !sb[c] || !tb[c]) continue;
     const td = wpos(tb[c]).sub(wpos(tb[n])).normalize();
     const sd = wpos(sb[c]).sub(wpos(sb[n])).normalize();
@@ -334,12 +341,14 @@ export class Rig {
     const bones = {};
     root.traverse((o) => { if (o.isBone) bones[o.name.replace('mixamorig', '')] = o; });
     this.B = (n) => bones[n];
+    // Character Creator yardımcı kemikleri (burulma / hacim) bağlama pozunda yakalanır; v2'de her karede sürülür
+    if (this.isMark) this.corr = new CorrectiveBones(this.B);
     this.mixer = new THREE.AnimationMixer(root);
     this.actions = {};
     let clips;
     if (this.isMark && A.mocap) {
       const src = mocapSource();
-      clips = retargetClips(mark, src.S, src.clips, 'mocap');
+      clips = retargetClips(mark, src.S, src.clips, 'mocap', { spine: animSystemWanted() === 'v2' && !!A.mocap.clips?.walk_f });
       this.mocap = true;
     } else clips = this.isMark ? (A.models.soldier ? retargetClips(mark) : []) : A.anims?.soldier || [];
     for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);
@@ -364,6 +373,10 @@ export class Rig {
         if (c) this.jiggle.push({ b: o, c, q0: o.quaternion.clone(), p: null, v: V() });
       });
       this.initFeet();
+      // yeni animasyon çekirdeği (v2): tam 8 yönlü kayıt seti varsa ve geliştirici v1 seçmediyse
+      if (animSystemWanted() === 'v2') { const v2 = new LocomotionV2(this); if (v2.ok) this.v2 = v2; }
+      try { this.testMode = localStorage.getItem('pp.animTest') || null; } catch (e) { /* */ }
+      try { this.corrOn = !!this.corr && (this.v2 ? localStorage.getItem('pp.animDuzeltici') !== '0' : localStorage.getItem('pp.animDuzeltici') === '1'); } catch (e) { this.corrOn = !!(this.corr && this.v2); }
     } else {
       this.cur = this.actions.Idle || null;
       if (this.cur) this.cur.play();
@@ -821,6 +834,8 @@ export class Rig {
       faz: f(L.phase), kadans: f(L.cad), esnetme: f(L.warp), kalcaDonus: f(L.theta), adimYonu: f(L.rho),
       ayak: this.feet ? { sol: this.feet.Left.mode, sag: this.feet.Right.mode } : null,
       gecersizKemik: bad, guncellemeMs: f(this._ms),
+      sistem: this.v2 ? 'v2' : 'v1', test: this.testMode || null, duzeltici: this.corrOn ? this.corr.count : 0,
+      v2: this.v2 ? { ...this.v2.dbg, klipler: this.v2.top() } : null,
     };
   }
 
@@ -842,7 +857,8 @@ export class Rig {
     }
     const bones = this._sbBones, P = this._sbPose, F = this._sbFrom;
     const kneelEv = this._kneelEv; this._kneelEv = false; // çömelik yürüyüşten diz çökme
-    if (this._sbHave && ((this._sbStance !== undefined && this._sbStance !== s.stance) || kneelEv)) {
+    const softPair = this.v2 && ['ayakta', 'diz'].includes(this._sbStance) && ['ayakta', 'diz'].includes(s.stance);
+    if (this._sbHave && ((this._sbStance !== undefined && this._sbStance !== s.stance && !softPair) || kneelEv)) {
       const pair = [this._sbStance, s.stance];
       this._sbDur = kneelEv ? 0.4 : pair.includes('yuzustu') ? 0.6 : pair.includes('alcak') && pair.includes('ayakta') ? 0.45 : 0.36;
       F.rp.copy(P.rp); F.rq.copy(P.rq); bones.forEach((b, i) => F.q[i].copy(P.q[i])); F.fp.Left.copy(P.fp.Left); F.fp.Right.copy(P.fp.Right);
@@ -897,18 +913,42 @@ export class Rig {
     this._sbHave = true;
   }
 
+  /** Ayaklar zeminin altına girmez (v2 ve test C'nin tek bacak düzeltmesi) */
+  groundContact() {
+    const B = this.B, s = this.state, g = this.group;
+    g.updateMatrixWorld(true);
+    const gy = (s.groundY ?? 0.015) + (this.ankleH || 0.085);
+    for (const [side, sx] of [['Left', -1], ['Right', 1]]) {
+      const f = B(side + 'Foot'), fp = wpos(f);
+      if (fp.y >= gy) continue;
+      const fq = f.getWorldQuaternion(new THREE.Quaternion());
+      fp.y = gy;
+      twoBoneIK(B(side + 'UpLeg'), B(side + 'Leg'), f, fp, wpos(B(side + 'Leg')).addScaledVector(V(0, 0, -1).transformDirection(g.matrixWorld), 0.3));
+      f.quaternion.copy(f.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(fq));
+      f.updateMatrixWorld(true);
+    }
+  }
+
   update(dt) {
     const t0 = performance.now();
     this._update(dt);
+    if (this.corrOn && this.testMode !== 'B' && this.testMode !== 'C') this.corr.apply();
     this._ms = (this._ms ?? 0) * 0.9 + (performance.now() - t0) * 0.1;
   }
 
   _update(dt) {
     if (!this.root) return;
     const g = this.group, root = this.root, B = this.B, s = this.state;
-    if (this.mocap) this.stepLoco(dt); else this.mixer.update(dt);
+    if (this.v2) this.v2.update(dt); else if (this.mocap) this.stepLoco(dt); else this.mixer.update(dt);
+    // karşılaştırma testleri (yalnızca geliştirici): B = aktarılmış kayıt, hiçbir katman yok; C = + zemin teması
+    if (this.testMode === 'B' || this.testMode === 'C') {
+      root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); g.updateMatrixWorld(true);
+      if (this.testMode === 'C') this.groundContact();
+      if (this.weapon) this.weapon.obj.visible = false;
+      return;
+    }
     // nişan alınca üst gövde sabitlenir (yürürken omuzlar sallanmaz)
-    if (this.mocap && this.neutral) {
+    if (this.mocap && this.neutral && !this.v2) {
       const ab0 = this._ab ?? (s.aim ? 1 : 0);
       const k = s.stance === 'ayakta' ? 0.75 * ab0 : 0.9;
       if (k > 0) for (const n in this.neutral) B(n).quaternion.slerp(this.neutral[n], n === 'Spine' ? k * 0.5 : k);
@@ -916,7 +956,7 @@ export class Rig {
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
     // kalça gidilen yöne döner (gövde silah duruşu katmanında nişana geri döner)
-    const legsMode = this.mocap && this.feet && (s.stance === 'ayakta' || s.stance === 'diz');
+    const legsMode = !this.v2 && this.mocap && this.feet && (s.stance === 'ayakta' || s.stance === 'diz');
     if (legsMode) root.rotation.y = ((this.loco.theta || 0) * Math.PI) / 180;
     g.updateMatrixWorld(true);
     const L = (x, y, z) => g.localToWorld(V(x, y, z));
@@ -971,6 +1011,8 @@ export class Rig {
       rotWorld(B('RightFoot'), right, -1.15);
       rotWorld(spine, right, 0.32);
       rotWorld(spine1, right, 0.12);
+    } else if (this.v2 && (s.stance === 'ayakta' || s.stance === 'diz')) {
+      // v2: duruş ve yürüyüş tamamen kayıttan; yalnızca zemin teması (aşağıda)
     } else if (s.stance === 'diz') {
       // diz çökme <-> çömelerek yürüme: hareket edince kalça biraz kalkar, ayaklar yürüyüş kaydının
       // adımlarını izler (dizler bükük), durunca sağ diz yere iner
@@ -1034,7 +1076,7 @@ export class Rig {
       rotWorld(spine1, up, 0.12);
     }
     // ayak-zemin: ayaklar zeminin altına girmez
-    if (this.mocap && s.stance === 'ayakta' && !legsMode) {
+    if (this.mocap && (s.stance === 'ayakta' || (this.v2 && s.stance === 'diz')) && !legsMode) {
       g.updateMatrixWorld(true);
       const gy = (s.groundY ?? 0.015) + this.ankleH;
       for (const [side, sx] of [['Left', -1], ['Right', 1]]) {
@@ -1044,7 +1086,7 @@ export class Rig {
     }
     this.stanceBlend(dt);
     // silah duruşu katmanı (ayakta ve çömelerek yürürken)
-    if (this.mocap && (s.stance === 'ayakta' || s.stance === 'diz')) { g.updateMatrixWorld(true); this.uprightTorso(dt); }
+    if (this.mocap && !this.v2 && (s.stance === 'ayakta' || s.stance === 'diz')) { g.updateMatrixWorld(true); this.uprightTorso(dt); }
     // üst gövde burulması: bakış yönü ile bacak yönü arasındaki fark omurgaya dağıtılır (omuz önce döner)
     const tw =Math.max(-1.25, Math.min(1.25, s.twist || 0));
     if (Math.abs(tw) > 1e-4 && s.stance !== 'yuzustu') {
@@ -1054,7 +1096,7 @@ export class Rig {
       rotWorld(neck, up, tw * 0.18);
     }
     // nefes: göğüs ve omuzlar; efor arttıkça hızlanır ve derinleşir
-    if (this.mocap && dt > 0) {
+    if (this.mocap && !this.v2 && dt > 0) {
       const ex = Math.min(1, s.exert || 0);
       this._bt = (this._bt || 0) + dt * (1.45 + ex * 2.7);
       const br = Math.sin(this._bt), amp = 0.011 + 0.03 * ex;
@@ -1063,7 +1105,7 @@ export class Rig {
       if (B('RightShoulder')) rotWorld(B('RightShoulder'), back, -br * amp * 0.7);
     }
     // tüfekli duruş: gövde ~24° sağa döner (sol omuz önde, sol el el kundağına yetişir), baş ileri bakar
-    if (this.silah !== 'tabanca' && this.weapon && s.stance !== 'yuzustu') {
+    if (this.silah !== 'tabanca' && this.weapon && s.stance !== 'yuzustu' && !(this.v2 && (s.stance === 'ayakta' || s.stance === 'diz'))) {
       const bl = -0.42 * (1 - 0.7 * (s.sprint || 0));
       rotWorld(spine, up, bl * 0.3); rotWorld(spine1, up, bl * 0.35); rotWorld(spine2, up, bl * 0.35);
       rotWorld(neck, up, -bl * 0.65); rotWorld(head, up, -bl * 0.35);
@@ -1144,11 +1186,12 @@ export class Rig {
       const t = (this._swT = (this._swT || 0) + dt), ex = Math.min(1, s.exert || 0);
       const nx = Math.sin(t * 1.31) + 0.5 * Math.sin(t * 2.73 + 1.3) + 0.25 * Math.sin(t * 5.1 + 0.4);
       const ny = Math.sin(t * 1.07 + 0.7) + 0.5 * Math.sin(t * 2.29 + 2.1) + 0.25 * Math.sin(t * 4.7 + 1.9);
-      const ar = lr(0.022, 0.0035, abW) * (1 + ex * 1.8);
+      // v2'de sinüs sallantısı yok: tüfek gövdenin gerçek hareketiyle (omuz cebi) birlikte oynar
+      const ar = this.v2 ? 0 : lr(0.022, 0.0035, abW) * (1 + ex * 1.8);
       o.rotation.x += ny * ar * 0.6;
       o.rotation.y += nx * ar;
       // adım sallantısı
-      const sp = s.stance === 'ayakta' ? Math.min(1, (s.locoSpeed || 0) / 1.6) : 0, ph = (this.loco?.phase || 0) * Math.PI * 2;
+      const sp = this.v2 ? 0 : s.stance === 'ayakta' ? Math.min(1, (s.locoSpeed || 0) / 1.6) : 0, ph = (this.loco?.phase || 0) * Math.PI * 2;
       const bk = sp * lr(1, 0.35, abW) * (1 + (s.locoSpeed > 2.6 ? 1.2 : 0));
       o.position.y += Math.sin(ph * 2) * 0.011 * bk;
       o.position.x += Math.sin(ph) * 0.009 * bk;
@@ -1544,6 +1587,9 @@ export class Rig {
 }
 
 /** Editördeki sabit atıcı figürü */
+// geliştirici erişimi (arayüz yok): karşılaştırma testleri kaynak iskeleti ve klipleri buradan okur
+if (typeof window !== 'undefined') window.__ppAnimDev = { get A() { return A; }, mocapSource, retargetClips, THREE };
+
 export function buildSoldier(pose = 'ayakta', silah = 'tufek') {
   if (!A.models.soldier) return null;
   const r = new Rig(silah);

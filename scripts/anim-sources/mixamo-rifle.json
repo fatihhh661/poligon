@@ -16,9 +16,454 @@
     "note": "Ham FBX dosyaları depoya girmez (Mixamo koşulları). Mixamo'da Y Bot seçili iken 'Rifle 8-Way Locomotion Pack' -> Download: FBX Binary, No Character, 60 fps, keyframe reduction none. Zip'i bir klasöre açıp bu tanımla çalıştırın."
   },
   "clips": [
-    { "key": "Idle", "file": "idle.fbx", "t0": 0, "t1": 2.1, "idle": true, "blend": 0.3 },
-    { "key": "Walk", "file": "walk forward.fbx", "t0": 0, "t1": 1.0, "L": [0.98, 1.0], "ang": 0 },
-    { "key": "Run", "file": "run forward.fbx", "t0": 0, "t1": 0.5, "L": [0.48, 0.5], "ang": 0 },
-    { "key": "WalkBack", "file": "walk backward.fbx", "t0": 0, "t1": 1.0, "L": [0.98, 1.0], "ang": 180 }
+    {
+      "key": "Idle",
+      "file": "idle.fbx",
+      "t0": 0,
+      "t1": 2.1,
+      "idle": true,
+      "blend": 0.3
+    },
+    {
+      "key": "Walk",
+      "file": "walk forward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 0
+    },
+    {
+      "key": "Run",
+      "file": "run forward.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 0
+    },
+    {
+      "key": "WalkBack",
+      "file": "walk backward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 180
+    },
+    {
+      "key": "idle_aim",
+      "file": "idle aiming.fbx",
+      "t0": 0,
+      "t1": 2.1,
+      "idle": true,
+      "blend": 0.3
+    },
+    {
+      "key": "cidle",
+      "file": "idle crouching.fbx",
+      "t0": 0,
+      "t1": 2.1,
+      "idle": true,
+      "blend": 0.3
+    },
+    {
+      "key": "cidle_aim",
+      "file": "idle crouching aiming.fbx",
+      "t0": 0,
+      "t1": 2.1,
+      "idle": true,
+      "blend": 0.3
+    },
+    {
+      "key": "turn_l",
+      "file": "turn 90 left.fbx",
+      "t0": 0,
+      "t1": 0.98,
+      "idle": true,
+      "blend": 0
+    },
+    {
+      "key": "turn_r",
+      "file": "turn 90 right.fbx",
+      "t0": 0,
+      "t1": 0.98,
+      "idle": true,
+      "blend": 0
+    },
+    {
+      "key": "cturn_l",
+      "file": "crouching turn 90 left.fbx",
+      "t0": 0,
+      "t1": 1.25,
+      "idle": true,
+      "blend": 0
+    },
+    {
+      "key": "cturn_r",
+      "file": "crouching turn 90 right.fbx",
+      "t0": 0,
+      "t1": 1.25,
+      "idle": true,
+      "blend": 0
+    },
+    {
+      "key": "walk_f",
+      "file": "walk forward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 0
+    },
+    {
+      "key": "run_f",
+      "file": "run forward.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 0
+    },
+    {
+      "key": "sprint_f",
+      "file": "sprint forward.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 0
+    },
+    {
+      "key": "cwalk_f",
+      "file": "walk crouching forward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 0
+    },
+    {
+      "key": "walk_fl",
+      "file": "walk forward left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 45
+    },
+    {
+      "key": "run_fl",
+      "file": "run forward left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 45
+    },
+    {
+      "key": "sprint_fl",
+      "file": "sprint forward left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 45
+    },
+    {
+      "key": "cwalk_fl",
+      "file": "walk crouching forward left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 45
+    },
+    {
+      "key": "walk_l",
+      "file": "walk left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 90
+    },
+    {
+      "key": "run_l",
+      "file": "run left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 90
+    },
+    {
+      "key": "sprint_l",
+      "file": "sprint left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 90
+    },
+    {
+      "key": "cwalk_l",
+      "file": "walk crouching left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 90
+    },
+    {
+      "key": "walk_bl",
+      "file": "walk backward left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 135
+    },
+    {
+      "key": "run_bl",
+      "file": "run backward left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 135
+    },
+    {
+      "key": "sprint_bl",
+      "file": "sprint backward left.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 135
+    },
+    {
+      "key": "cwalk_bl",
+      "file": "walk crouching backward left.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 135
+    },
+    {
+      "key": "walk_b",
+      "file": "walk backward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 180
+    },
+    {
+      "key": "run_b",
+      "file": "run backward.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 180
+    },
+    {
+      "key": "sprint_b",
+      "file": "sprint backward.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": 180
+    },
+    {
+      "key": "cwalk_b",
+      "file": "walk crouching backward.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": 180
+    },
+    {
+      "key": "walk_br",
+      "file": "walk backward right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -135
+    },
+    {
+      "key": "run_br",
+      "file": "run backward right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -135
+    },
+    {
+      "key": "sprint_br",
+      "file": "sprint backward right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -135
+    },
+    {
+      "key": "cwalk_br",
+      "file": "walk crouching backward right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -135
+    },
+    {
+      "key": "walk_r",
+      "file": "walk right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -90
+    },
+    {
+      "key": "run_r",
+      "file": "run right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -90
+    },
+    {
+      "key": "sprint_r",
+      "file": "sprint right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -90
+    },
+    {
+      "key": "cwalk_r",
+      "file": "walk crouching right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -90
+    },
+    {
+      "key": "walk_fr",
+      "file": "walk forward right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -45
+    },
+    {
+      "key": "run_fr",
+      "file": "run forward right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -45
+    },
+    {
+      "key": "sprint_fr",
+      "file": "sprint forward right.fbx",
+      "t0": 0,
+      "t1": 0.5,
+      "L": [
+        0.48,
+        0.5
+      ],
+      "ang": -45
+    },
+    {
+      "key": "cwalk_fr",
+      "file": "walk crouching forward right.fbx",
+      "t0": 0,
+      "t1": 1,
+      "L": [
+        0.98,
+        1
+      ],
+      "ang": -45
+    }
   ]
 }
