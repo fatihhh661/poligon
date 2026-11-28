@@ -1,0 +1,30 @@
+{
+  "id": "actorcore-test",
+  "activate": false,
+  "profile": "cc",
+  "srcFps": 60,
+  "fps": 60,
+  "torso": 0.3,
+  "maxWarp": 1.1,
+  "source": {
+    "name": "ActorCore (Reallusion) — ücretsiz deneme hareketleri",
+    "author": "Reallusion ActorCore",
+    "license": "ActorCore Standart Lisans (ücretsiz içerik); oyun/uygulama dağıtımı için ürün bazında doğrulanmalı",
+    "url": "https://actorcore.reallusion.com/3d-motion/free",
+    "attribution": "Hareketler: Reallusion ActorCore",
+    "capture": "Hareket yakalama, Character Creator iskeleti, 60 fps, FBX (Unity hedefi), yalnızca hareket",
+    "note": "Ham FBX'ler depoya girmez. Yalnızca uyum testi: Mixamo ile karşılaştırma için."
+  },
+  "clips": [
+    { "key": "Idle", "file": "male-idle_279398.fbx", "t0": 0, "t1": 5.7, "idle": true, "blend": 0.5 },
+    { "key": "Walk", "file": "walk01-625495/walk-2loop-379004.fbx", "t0": 0, "t1": 1.633, "L": [1.55, 1.633], "inPlace": true, "ang": 0 },
+    { "key": "Run", "file": "hold_gun_fastrun_forward/hold_gun_fastrun_forward_loop_279387.fbx", "t0": 0, "t1": 0.65, "L": [0.6, 0.65], "ang": 0 },
+    { "key": "WalkBack", "file": "walk01-625495/walk-2loop-379004.fbx", "t0": 0, "t1": 1.633, "L": [1.55, 1.633], "inPlace": true, "ang": 180 },
+    { "key": "walk_f", "file": "walk01-625495/walk-2loop-379004.fbx", "t0": 0, "t1": 1.633, "L": [1.55, 1.633], "inPlace": true, "ang": 0 },
+    { "key": "walkr_f", "file": "walk-relaxed-625493/walk-relaxed-2loop-378986.fbx", "t0": 0, "t1": 5.18, "L": [0.9, 1.4], "inPlace": true, "ang": 0 },
+    { "key": "run_f", "file": "hold_gun_fastrun_forward/hold_gun_fastrun_forward_loop_279387.fbx", "t0": 0, "t1": 0.65, "L": [0.6, 0.65], "ang": 0 },
+    { "key": "cwalk_f", "file": "walk01-625495/walk-2loop-379004.fbx", "t0": 0, "t1": 1.633, "L": [1.55, 1.633], "inPlace": true, "ang": 0 },
+    { "key": "turn_r", "file": "b09_hold_gun_turn90_r.fbx", "t0": 0, "t1": 2.85, "idle": true, "blend": 0 },
+    { "key": "turn_l", "file": "c08_low_hold_gun_turn180_l.fbx", "t0": 0, "t1": 3.0, "idle": true, "blend": 0 }
+  ]
+}

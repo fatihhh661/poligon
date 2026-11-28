@@ -204,9 +204,12 @@ const LIMB_CHILD = {
 };
 for (const s of ['Left', 'Right']) for (const f of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) { LIMB_CHILD[`${s}Hand${f}1`] = `${s}Hand${f}2`; LIMB_CHILD[`${s}Hand${f}2`] = `${s}Hand${f}3`; }
 
+// Character Creator pelvis kemiği (CC_Base_Pelvis) Mixamo adı taşımaz; CC kaynaklı kayıtlarda kalça salınımı
+// bu kemikte olduğu için aktarmaya 'Pelvis' adıyla dahil edilir (Mixamo kayıtlarında yok, etkilenmez)
+const ccName = (o) => (o.name.startsWith('mixamorig') ? o.name.slice(9) : o.name === 'CC_Base_Pelvis' ? 'Pelvis' : null);
 function boneMap(root) {
   const m = {};
-  root.traverse((o) => { if (o.isBone && o.name.startsWith('mixamorig')) m[o.name.slice(9)] = o; });
+  root.traverse((o) => { const n = o.isBone ? ccName(o) : null; if (n) m[n] = o; });
   return m;
 }
 function restPose(root) {
@@ -256,7 +259,7 @@ function retargetClips(tgtSrcModel, srcObj = null, srcClips = null, key = 'soldi
   const names = Object.keys(tb).filter((n) => sb[n]);
   // hedefi kaynağın dinlenme pozuna (T-poz) getir: kemik yönlerini hizala
   const order = [];
-  T.traverse((o) => { if (o.isBone && o.name.startsWith('mixamorig')) order.push(o.name.slice(9)); });
+  T.traverse((o) => { const n = o.isBone ? ccName(o) : null; if (n) order.push(n); });
   for (const n of order) {
     const c = LIMB_CHILD[n] || (opt.spine ? SPINE_CHILD[n] : null);
     if (!c || !sb[n] || !sb[c] || !tb[c]) continue;

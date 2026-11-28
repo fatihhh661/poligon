@@ -30,6 +30,16 @@ const PROFILES = {
   })(),
   // Mixamo FBX: adlar zaten mixamorig* (FBXLoader ':' karakterini atar)
   mixamo: null,
+  // Reallusion Character Creator / ActorCore (CC_Base_*). Askerin iskeleti de CC; ana kemikleri Mixamo adlı.
+  cc: (() => {
+    const m = { CC_Base_Hip: 'Hips', CC_Base_Pelvis: 'Pelvis', CC_Base_Waist: 'Spine', CC_Base_Spine01: 'Spine1', CC_Base_Spine02: 'Spine2', CC_Base_NeckTwist01: 'Neck', CC_Base_Head: 'Head' };
+    for (const [S, side] of [['L', 'Left'], ['R', 'Right']]) {
+      Object.assign(m, { [`CC_Base_${S}_Clavicle`]: side + 'Shoulder', [`CC_Base_${S}_Upperarm`]: side + 'Arm', [`CC_Base_${S}_Forearm`]: side + 'ForeArm', [`CC_Base_${S}_Hand`]: side + 'Hand',
+        [`CC_Base_${S}_Thigh`]: side + 'UpLeg', [`CC_Base_${S}_Calf`]: side + 'Leg', [`CC_Base_${S}_Foot`]: side + 'Foot', [`CC_Base_${S}_ToeBase`]: side + 'ToeBase' });
+      for (const [cf, mf] of [['Index', 'Index'], ['Mid', 'Middle'], ['Ring', 'Ring'], ['Pinky', 'Pinky'], ['Thumb', 'Thumb']]) for (let i = 1; i <= 3; i++) m[`CC_Base_${S}_${cf}${i}`] = `${side}Hand${mf}${i}`;
+    }
+    return m;
+  })(),
 };
 const LEGS = ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'Spine', 'Spine1'];
 
@@ -84,10 +94,11 @@ async function loadMotionFBX(file, cfg) {
   const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
   const buf = fs.readFileSync(file);
   const root = new FBXLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), path.dirname(file) + path.sep);
-  const clip = root.animations?.[0];
+  // ActorCore dosyalarında ilk animasyon '0_T-Pose' (bağlama pozu); asıl hareket en uzun olan
+  const clip = [...(root.animations || [])].sort((x, y) => y.duration - x.duration)[0];
   if (!clip) throw new Error(`${path.basename(file)}: animasyon yok (Mixamo'da "Without Skin" + FBX Binary seçin)`);
   let hip = null;
-  root.traverse((o) => { if (!hip && o.isBone && /Hips$/.test(o.name)) hip = o; });
+  root.traverse((o) => { if (!hip && o.isBone && /(Hips|CC_Base_Hip)$/.test(o.name)) hip = o; });
   if (!hip) throw new Error(`${path.basename(file)}: Hips kemiği bulunamadı`);
   const bones = [];
   hip.traverse((o) => { if (o.isBone) bones.push(o); });
@@ -111,17 +122,19 @@ async function loadMotionFBX(file, cfg) {
   // birim: dinlenme pozunda kalça yüksekliği (en alçak eklemden). Mixamo santimetre kullanır.
   const minY = Math.min(...restP.map((v) => v.y)), hipRaw = restP[0].y - minY;
   const S = cfg.scale ?? (cfg.hipHeight ? cfg.hipHeight / hipRaw : hipRaw > 10 ? 0.01 : 1);
-  const toe = bones.findIndex((b) => /LeftToeBase$/.test(b.name)), ank = bones.findIndex((b) => /LeftFoot$/.test(b.name));
+  const map = PROFILES[cfg.profile] || null;
+  const nmF = (x) => (map && map[x] ? 'mixamorig' + map[x] : x);
+  const toe = bones.findIndex((b) => /LeftToeBase$/.test(nmF(b.name))), ank = bones.findIndex((b) => /LeftFoot$/.test(nmF(b.name)));
   const fwd0 = restP[toe].clone().sub(restP[ank]).setY(0).normalize();
   const restYaw = Math.atan2(fwd0.x, fwd0.z);
   const R = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -restYaw), Ri = R.clone().invert();
   const idx = Object.fromEntries(bones.map((b, k) => [b.name, k]));
   const Q = (b, i) => R.clone().multiply(new THREE.Quaternion().fromArray(LQ[idx[b]], Math.min(i, n - 1) * 4)).multiply(Ri);
   const P = (i) => new THREE.Vector3().fromArray(HP, Math.min(i, n - 1) * 3).multiplyScalar(S).applyQuaternion(R);
-  const nm = (x) => x; // Mixamo adları zaten mixamorig* (FBXLoader ':' karakterini atar)
+  const nm = nmF; // Mixamo: adlar zaten mixamorig*; CC: profil eşlemesi
   return {
     names: bones.map((b) => b.name), hipName: hip.name, fps, n, S, Q, P, fwd: new THREE.Vector3(0, 0, 1), nm, restYaw,
-    hierarchy: bones.map((b, k) => ({ n: b.name, p: par[k], o: (par[k] >= 0 ? restP[k].clone().sub(restP[par[k]]) : new THREE.Vector3()).applyQuaternion(R).toArray().map((v) => +(v * S).toFixed(5)) })),
+    hierarchy: bones.map((b, k) => ({ n: nm(b.name), p: par[k], o: (par[k] >= 0 ? restP[k].clone().sub(restP[par[k]]) : new THREE.Vector3()).applyQuaternion(R).toArray().map((v) => +(v * S).toFixed(5)) })),
   };
 }
 
@@ -141,9 +154,12 @@ function buildClip(M, sp, outFps) {
       c += Math.abs(P(s).y - P(s + l).y) * 3 + Math.abs((P(s + 1).y - P(s).y) - (P(s + l + 1).y - P(s + l).y)) * 40;
       // düzlük: kayıt alanı küçükse oyuncu sık döner; dönüş anları döngü olarak seçilmesin
       const p0 = P(s), p1 = P(s + l), pm = P(s + (l >> 1)), d = p1.clone().sub(p0).setY(0), dl = d.length();
-      if (dl < 0.2) continue; // yerinde sayma / durma
-      const off = pm.clone().sub(p0).setY(0).cross(d).length() / dl; // yolun düz çizgiden sapması (m)
-      c += Math.abs(wrap(yawAt(s + l) - yawAt(s))) * 2 + off * 6;
+      // yerinde kayıtlar (inPlace: kök ilerlemez, ör. ActorCore yürüyüş döngüsü) için düzlük/ilerleme ölçütü atlanır
+      if (!sp.inPlace) {
+        if (dl < 0.2) continue; // yerinde sayma / durma
+        const off = pm.clone().sub(p0).setY(0).cross(d).length() / dl; // yolun düz çizgiden sapması (m)
+        c += Math.abs(wrap(yawAt(s + l) - yawAt(s))) * 2 + off * 6;
+      } else c += Math.abs(wrap(yawAt(s + l) - yawAt(s))) * 2;
       // hedef hız aralığı (verildiyse)
       if (sp.v) { const v = dl / (l / fps); if (v < sp.v[0] || v > sp.v[1]) continue; }
       if (c < best) { best = c; a = s; L = l; }
@@ -159,7 +175,7 @@ function buildClip(M, sp, outFps) {
   const D = P(a + L).sub(P(a)).setY(0);
   const speed = sp.idle ? 0 : D.length() / (L / fps);
   const N = Math.max(2, Math.round((L / fps) * outFps));
-  const clip = { dur: +(L / fps).toFixed(4), speed: +speed.toFixed(3), ang: sp.ang ?? 0, q: {}, hp: [] };
+  const clip = { dur: +(L / fps).toFixed(4), speed: +speed.toFixed(3), ang: sp.ang ?? 0, q: {}, hp: [], idleClip: !!sp.idle };
   for (const b of names) clip.q[M.nm(b)] = [];
   const blendTail = sp.idle ? Math.round((sp.blend ?? 0.8) * outFps) : 0;
   const hipQ = (i) => { let q = rotInv.clone().multiply(Q(hipName, i)); if (sp.idle) q = q.multiply(new THREE.Quaternion(0, q.y, 0, q.w).normalize().invert()); return q; };
@@ -205,17 +221,24 @@ function footPhases(out) {
   for (const [k, c] of Object.entries(out.clips)) {
     const N = c.hp.length / 3;
     let best = 1e9, bi = 0;
-    const hs = [];
+    const hs = [], zl = [];
     for (let f = 0; f < N - 1; f++) {
       bones.forEach((b) => { const q = c.q[b.name]; if (q) b.quaternion.fromArray(q, f * 4); });
       bones[0].position.fromArray(c.hp, f * 3);
       bones[0].updateMatrixWorld(true);
       const yl = new THREE.Vector3().setFromMatrixPosition(lf.matrixWorld).y, yr = new THREE.Vector3().setFromMatrixPosition(rf.matrixWorld).y;
       hs.push(Math.min(yl, yr));
+      zl.push(new THREE.Vector3().setFromMatrixPosition(lf.matrixWorld).z - bones[0].position.z); // sol ayağın kalçaya göre ileri konumu
       if (yl - yr < best) { best = yl - yr; bi = f; }
     }
     c.ph0 = +(bi / (N - 1)).toFixed(4);
     c.footY = +Math.min(...hs).toFixed(4);
+    // yerinde (kök hareketsiz) kayıt: adım boyu ayağın kalçaya göre ileri-geri süpürmesinden kestirilir
+    // (bir çevrimde iki adım; bir adımda basan ayak kalçanın önünden arkasına kadar süpürür)
+    if (c.speed < 0.2 && !c.idleClip && zl.length) {
+      const sweep = Math.max(...zl) - Math.min(...zl);
+      c.stride = +(2 * sweep).toFixed(3); c.speed = +(c.stride / c.dur).toFixed(3); c.inPlace = true;
+    }
   }
 }
 

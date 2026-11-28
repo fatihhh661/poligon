@@ -7,3 +7,5 @@ ekran-goruntuleri/
 
 # Mixamo kaynaklı hareket verisi herkese açık depoya girmez (Mixamo koşulları); yalnızca yerel ve pakette
 app/assets/anim/lib/mixamo-*.json
+# ActorCore kaynaklı hareket verisi de depoya girmez (lisans ürün bazında doğrulanacak)
+app/assets/anim/lib/actorcore-*.json
