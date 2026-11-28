@@ -550,7 +550,8 @@
           "file": "b10-walk-f-loop.fbx",
           "t0": 1.433,
           "t1": 3.317,
-          "loopErr": 0.1245
+          "loopErr": 0.1245,
+          "upright": 9.2
         },
         "Walk": {
           "dur": 1.8833,
@@ -560,7 +561,8 @@
           "file": "b10-walk-f-loop.fbx",
           "t0": 1.433,
           "t1": 3.317,
-          "loopErr": 0.1245
+          "loopErr": 0.1245,
+          "upright": 9.2
         },
         "jog_f": {
           "dur": 0.6,
@@ -570,7 +572,8 @@
           "file": "b08-run-f-attack-loop.fbx",
           "t0": 0.533,
           "t1": 1.133,
-          "loopErr": 0.0596
+          "loopErr": 0.0596,
+          "upright": -1.5
         },
         "run_f": {
           "dur": 0.55,
@@ -580,7 +583,8 @@
           "file": "b01-run-f-loop.fbx",
           "t0": 0.333,
           "t1": 0.883,
-          "loopErr": 0.036
+          "loopErr": 0.036,
+          "upright": 18.4
         },
         "Run": {
           "dur": 0.55,
@@ -590,7 +594,8 @@
           "file": "b01-run-f-loop.fbx",
           "t0": 0.333,
           "t1": 0.883,
-          "loopErr": 0.036
+          "loopErr": 0.036,
+          "upright": 18.4
         }
       },
       "imported": "2026-11-28"

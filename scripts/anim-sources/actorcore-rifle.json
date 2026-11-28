@@ -21,10 +21,10 @@
   "clips": [
     { "key": "Idle", "file": "b-alert-slow-idle.fbx", "t0": 0, "t1": 5.58, "idle": true, "blend": 0.5 },
     { "key": "idle_relax", "file": "aa-patrol-idle.fbx", "t0": 0, "t1": 3.5, "idle": true, "blend": 0.5 },
-    { "key": "walk_f", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0 },
-    { "key": "Walk", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0 },
-    { "key": "jog_f", "file": "b08-run-f-attack/b08-run-f-attack-loop.fbx", "t0": 0, "t1": 1.21, "L": [0.5, 1.21], "ang": 0 },
-    { "key": "run_f", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0 },
-    { "key": "Run", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0 }
+    { "key": "walk_f", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0, "upright": true },
+    { "key": "Walk", "file": "b10-walk-f/b10-walk-f-loop.fbx", "t0": 0, "t1": 3.88, "L": [0.8, 1.9], "ang": 0, "upright": true },
+    { "key": "jog_f", "file": "b08-run-f-attack/b08-run-f-attack-loop.fbx", "t0": 0, "t1": 1.21, "L": [0.5, 1.21], "ang": 0, "upright": true },
+    { "key": "run_f", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0, "upright": true },
+    { "key": "Run", "file": "b01-run-f/b01-run-f-loop.fbx", "t0": 0, "t1": 1.08, "L": [0.5, 1.08], "ang": 0, "upright": true }
   ]
 }

@@ -213,6 +213,44 @@ function buildClip(M, sp, outFps) {
   return clip;
 }
 
+/**
+ * Dikleştirme (sp.upright): kaydın SABİT yan eğimini kaldırır. Bazı tüfek taşıma kayıtlarında (ActorCore
+ * Rifle Combat B01/B08/B10) gövde hareket boyunca kalçaya göre ~10–15 cm yana yatık; oyunda karakter
+ * sürekli sola meyilli görünüyordu. Kalça→baş vektörünün klip boyunca ortalama yan sapması ölçülür ve
+ * omurga tabanına sabit bir karşı dönüş (hareket yönü ekseni etrafında) eklenir. Kare kare salınım ve
+ * bacaklar değişmez; yalnızca ortalama yatıklık sıfırlanır.
+ */
+function uprightFix(clip, hierarchy) {
+  const H = hierarchy, N = clip.hp.length / 3;
+  const idx = Object.fromEntries(H.map((h, i) => [h.n, i]));
+  const iHip = 0, iSp = idx.mixamorigSpine, iHead = idx.mixamorigHead;
+  if (iSp == null || iHead == null) return 0;
+  const chain = []; for (let i = iHead; i >= 0; i = H[i].p) chain.unshift(i);
+  const D = (f) => {
+    // dünya-delta FK: konum = ebeveyn konumu + D_ebeveyn · dinlenme ofseti
+    const q = {}, p = {};
+    for (const i of chain) {
+      const lq = new THREE.Quaternion().fromArray(clip.q[H[i].n] || [0, 0, 0, 1], (clip.q[H[i].n] ? f : 0) * 4);
+      if (i === iHip) { q[i] = lq; p[i] = new THREE.Vector3(); continue; }
+      const pi = H[i].p; q[i] = q[pi].clone().multiply(lq); p[i] = p[pi].clone().add(new THREE.Vector3().fromArray(H[i].o).applyQuaternion(q[pi]));
+    }
+    return { q, p };
+  };
+  let sx = 0, sy = 0;
+  for (let f = 0; f < N; f++) { const { p } = D(f); const v = p[iHead].clone().sub(p[iHip]); sx += v.x; sy += v.y; }
+  const th = Math.atan2(sx / N, sy / N); // + = baş +X yönünde
+  const Rw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), th); // +X'i +Y'ye döndürür → sapmayı geri alır
+  const key = H[iSp].n, arr = clip.q[key];
+  for (let f = 0; f < N; f++) {
+    const { q } = D(f);
+    const Dh = q[H[iSp].p];
+    const corr = Dh.clone().invert().multiply(Rw).multiply(Dh);
+    const nq = corr.multiply(new THREE.Quaternion().fromArray(arr, f * 4)).normalize();
+    for (let k = 0; k < 4; k++) arr[f * 4 + k] = +nq.toArray()[k].toFixed(5);
+  }
+  return +(th * 57.2958).toFixed(1);
+}
+
 /** Adım fazı: sol ayağın en alçakta olduğu an (yere basış) ve en alçak ayak yüksekliği */
 function footPhases(out) {
   const bones = out.hierarchy.map((h) => { const b = new THREE.Bone(); b.name = h.n; b.position.fromArray(h.o); return b; });
@@ -256,6 +294,7 @@ for (const sp of cfg.clips) {
   const M = (cache[file] ||= await loadMotion(file, cfg));
   if (!out.hierarchy) out.hierarchy = M.hierarchy;
   const c = buildClip(M, { ...sp, file }, outFps);
+  if (sp.upright) { c.src.upright = uprightFix(c, M.hierarchy); console.log(`${sp.key.padEnd(10)} dikleştirme: ortalama yan eğim ${c.src.upright}° giderildi`); }
   out.clips[sp.key] = c;
   console.log(`${sp.key.padEnd(10)} ${c.src.file} ${c.src.t0}-${c.src.t1} sn  süre ${c.dur}  hız ${c.speed} m/sn  adım ${c.stride} m  döngü hatası ${c.src.loopErr}`);
 }
