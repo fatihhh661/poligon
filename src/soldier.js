@@ -834,7 +834,7 @@ export class Rig {
       faz: f(L.phase), kadans: f(L.cad), esnetme: f(L.warp), kalcaDonus: f(L.theta), adimYonu: f(L.rho),
       ayak: this.feet ? { sol: this.feet.Left.mode, sag: this.feet.Right.mode } : null,
       gecersizKemik: bad, guncellemeMs: f(this._ms),
-      sistem: this.v2 ? 'v2' : 'v1', test: this.testMode || null, duzeltici: this.corrOn ? this.corr.count : 0,
+      deri: A.deri, sistem: this.v2 ? 'v2' : 'v1', test: this.testMode || null, duzeltici: this.corrOn ? this.corr.count : 0,
       v2: this.v2 ? { ...this.v2.dbg, klipler: this.v2.top() } : null,
     };
   }

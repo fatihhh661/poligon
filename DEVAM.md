@@ -160,6 +160,13 @@ Yalnızca karakterin görünümü değişti; arayüz, sahne, ışık, mekanik ay
 - **Ölçüm (Mixamo, kayma m/sn / en büyük sıçrama °/kare):** bekleme 0/8, yürüyüş 0/20, koşu 0,005/20, koşu-duruş 0,003/17, geri 0/21, çapraz 0/24, çömelik yürüyüş 0,23/15. Rig güncellemesi eski ve yeni kodda aynı (izole ölçüm 1,09–1,17 ms).
 - **Kalan:** çömelik yürüyüş hâlâ normal yürüyüş klibinden (paketteki "walk crouching" henüz bağlanmadı); hareket halindeyken çömelmede kısa sıçrama (~44°/kare); 8 yön ve sprint klipleri kullanılmıyor.
 
+## 10. oturum: animasyon v2 ve deri onarımı (28.11.2026)
+- **v2 animasyon çekirdeği** (`src/animv2.js`): Mixamo 8 yönlü set (43 klip), faz senkronu, hızdan çevrim, yerinde dönüş, yumuşak geçiş. Eski prosedürel katmanlar v2'de kapalı. Geri dönüş: `localStorage.setItem('pp.animSys','v1')`. Testler: `pp.animTest` = `B` (ham aktarım) / `C` (+ zemin teması).
+- **Kök nedenler (ölçüldü):** eski sistemde omurga bir karede 8 sistemle değişiyordu; aktarım doğru (omurga açıları kaynağa ±3°); Mixamo 8 yönlü paketin stili alçak/öne eğik muharebe yürüyüşü; **model deri ağırlıkları kusurlu**: kol/uyluk ana kemiklerinde ağırlık yok (CC tasarımı: uzuvlar burulma kemiklerinde), ama kitelin üst kolunun %36–42'si gövdeye, dirseğin 6 cm üstünün %56'sı ön kola boyanmış; diz/dirsek hacim kemiklerinin ağırlığı sıfır.
+- **Deri onarımı** (`scripts/fix-skin.mjs --yaz` → `app/assets/models/mark-deri.glb`; orijinal `mark.glb` değişmez): yalnızca kitel ve pantolon, yalnızca uzuv kapsülleri, yalnızca kusurlu köşeler (üst kol 756, uyluk 310 köşe; ön kollar sağlıklı, dokunulmadı; sert ekipman dokunulmadı). Geri dönüş: `localStorage.setItem('pp.deri','orijinal')`.
+- **Görsel sonuç:** omuz/üst kol/dirsek nişanda ve koşuda belirgin düzeldi (kılıf ezilmiyor, hacim korunuyor). Kalça/uyluk/dizde fark küçük. Karşılaştırmalar: `ekran-goruntuleri/animasyon-rebuild/` (depoya girmez).
+- **Kalan:** yüzüstü/sürünme/alçak çöküş için kayıt yok (eski prosedürel poz); düzeltici kemik sürücüsü görünür fark yaratmadı; Mixamo yürüyüş stili alçak.
+
 ## Sıradaki iş
 0. Animasyon: Mixamo paketindeki çömelik yürüyüş, 8 yön ve sprint kliplerini motora bağla — 9. oturum notlarına bakın.
 1. Asker mekaniğinde kalanlar (kullanıcı isterse): geri tepme deseni, zemine göre ayak sesleri, bodycam tarzı 1. şahıs, ayakta/çömelik geçişinde ara animasyon, koşarken ani yön değiştirmede gövde yatışı.

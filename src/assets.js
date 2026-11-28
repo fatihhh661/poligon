@@ -43,7 +43,21 @@ export async function loadAssets(renderer, onProgress = () => {}) {
   const gl = new GLTFLoader();
   for (const k of MODELS) {
     jobs.push(async () => {
-      const g = await gl.loadAsync(`assets/models/${k}.glb`);
+      // asker: deri ağırlıkları onarılmış ayrı sürüm (mark-deri.glb) varsa o; geliştirici seçimi
+      // localStorage 'pp.deri' = 'orijinal' orijinal ağırlıklara döner. Orijinal dosya hiç değişmez.
+      let file = `assets/models/${k}.glb`;
+      if (k === 'mark') {
+        let want = 'duzeltilmis';
+        try { want = localStorage.getItem('pp.deri') || want; } catch (e) { /* */ }
+        if (want !== 'orijinal') file = 'assets/models/mark-deri.glb';
+      }
+      let g;
+      try { g = await gl.loadAsync(file); } catch (e) {
+        if (!file.includes('mark-deri')) throw e;
+        file = `assets/models/${k}.glb`; // onarılmış sürüm bu kurulumda yoksa orijinal
+        g = await gl.loadAsync(file);
+      }
+      if (k === 'mark') A.deri = file.includes('mark-deri') ? 'duzeltilmis' : 'orijinal';
       g.scene.traverse((o) => {
         if (o.isMesh) {
           o.castShadow = o.receiveShadow = true;
@@ -64,6 +78,13 @@ export async function loadAssets(renderer, onProgress = () => {}) {
   }
   let done = 0;
   await Promise.all(jobs.map((j) => j().then(() => onProgress(++done / jobs.length))));
+  // geliştirici erişimi (arayüz yok): deri karşılaştırması için asker modelini oturum içinde değiştirir
+  if (typeof window !== 'undefined') window.__ppDeri = async (which) => {
+    const g = await gl.loadAsync(which === 'orijinal' ? 'assets/models/mark.glb' : 'assets/models/mark-deri.glb');
+    g.scene.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; if (o.material.map) o.material.map.anisotropy = aniso; } });
+    const w = new THREE.Group(); w.name = 'yonDuzelt'; w.rotation.y = Math.PI; for (const c of [...g.scene.children]) w.add(c); g.scene.add(w);
+    A.models.mark = g.scene; A.deri = which === 'orijinal' ? 'orijinal' : 'duzeltilmis'; return A.deri;
+  };
   A.ok = true;
   return A;
 }
